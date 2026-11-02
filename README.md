@@ -14,6 +14,8 @@ The UI is in Georgian. Code and comments are in English. The docs are in English
 > times) is a labelled *demo assumption*. Nothing here is a heat-loss calculation, a pump/boiler sizing,
 > a safe setting, or an installation instruction. See [docs/ASSUMPTIONS.md](docs/ASSUMPTIONS.md).
 
+**Live:** https://nbk-777.github.io/claude-cloud/
+
 ## Run
 
 ```bash
