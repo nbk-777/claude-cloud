@@ -1,5 +1,0 @@
-node_modules
-dist
-*.tsbuildinfo
-e2e/screenshots/*.tmp
-e2e/screenshots/
