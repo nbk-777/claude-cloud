@@ -236,3 +236,7 @@ code { word-break: break-all; }
 .wire-ta1.ta1-closed, .wiring-view .wire-ta1.ta1-closed, .boiler-view .wire-ta1.ta1-closed { stroke: #fd7e14; opacity: 1; }
 .plan .wire-ta1.ta1-closed { stroke: #fd7e14; }
 .call-outline { fill: none; stroke: #e8590c; stroke-width: 0.05; stroke-dasharray: 0.18 0.12; opacity: .8; }
+.io-box { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; max-width: 720px; }
+.io-box textarea { width: 100%; font-family: ui-monospace, monospace; font-size: 12px; }
+.page { overflow-x: auto; min-width: 0; }
+.app { overflow-x: hidden; }

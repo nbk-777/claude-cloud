@@ -29,6 +29,10 @@ import { ROOM_COLOR } from './util';
 export function MappingPage({ cfg, setCfg }: { cfg: AppConfig; setCfg: (c: AppConfig) => void }) {
   const counts = loopCountByRoom(cfg.loops);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [showExport, setShowExport] = useState(false);
+  const [pasted, setPasted] = useState('');
+  const [confirmReset, setConfirmReset] = useState(false);
+  const exportRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const roomOpt = (allowNone: boolean) => (
     <>
@@ -40,16 +44,18 @@ export function MappingPage({ cfg, setCfg }: { cfg: AppConfig; setCfg: (c: AppCo
       ))}
     </>
   );
-  const doExport = () => {
-    const blob = new Blob([exportConfig(cfg)], { type: 'application/json' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'ufh-config.json';
-    a.click();
-    URL.revokeObjectURL(a.href);
+  // Export is shown as copyable text (file downloads are blocked in some hosts).
+  const copyExport = async () => {
+    try {
+      await navigator.clipboard.writeText(exportConfig(cfg));
+      setMsg({ ok: true, text: 'JSON დაკოპირდა' });
+    } catch {
+      exportRef.current?.select();
+      setMsg({ ok: true, text: 'მონიშნულია — დააკოპირეთ Ctrl+C-ით' });
+    }
   };
-  const doImport = async (f: File) => {
-    const text = await f.text();
+  const doImport = async (f: File) => importText(await f.text());
+  const importText = (text: string) => {
     const r = importConfig(text, cfg);
     if (r.ok) {
       setCfg(r.config);
@@ -71,10 +77,29 @@ export function MappingPage({ cfg, setCfg }: { cfg: AppConfig; setCfg: (c: AppCo
         <button onClick={() => setCfg(clearMapping(cfg))} data-testid="clear-mapping">{ka.mapping.clear}</button>
         <button onClick={() => setCfg({ ...cfg, loops: defaultLoops(), mappingVerified: false })}>{ka.mapping.reset} (6/3/2/1/1/1)</button>
         <button onClick={() => setCfg({ ...cfg, loops: defaultLoops(ALT_ALLOCATION), mappingVerified: false })}>ალტერნატივა მე-2 შეტყობინებიდან (6/3/2/2/0/1)</button>
-        <button onClick={doExport}>{ka.mapping.export}</button>
-        <button onClick={() => fileRef.current?.click()}>{ka.mapping.import}</button>
-        <input ref={fileRef} type="file" accept="application/json" hidden data-testid="import-file" onChange={(e) => e.target.files?.[0] && doImport(e.target.files[0])} />
-        <button onClick={() => { if (confirm('ყველა პარამეტრის დემოზე დაბრუნება?')) setCfg(defaultConfig()); }}>ყველაფრის დემოზე დაბრუნება</button>
+        <button onClick={() => setShowExport(!showExport)} data-testid="export">{ka.mapping.export}</button>
+        <button onClick={() => fileRef.current?.click()}>{ka.mapping.import} (ფაილი)</button>
+        <input ref={fileRef} id="import-file" type="file" accept="application/json" hidden data-testid="import-file" onChange={(e) => e.target.files?.[0] && doImport(e.target.files[0])} />
+        {!confirmReset ? (
+          <button onClick={() => setConfirmReset(true)}>ყველაფრის დემოზე დაბრუნება</button>
+        ) : (
+          <span className="row">
+            ნამდვილად? ყველა პარამეტრი წაიშლება.
+            <button className="primary" onClick={() => { setCfg(defaultConfig()); setConfirmReset(false); }}>დიახ, დაბრუნება</button>
+            <button onClick={() => setConfirmReset(false)}>გაუქმება</button>
+          </span>
+        )}
+      </div>
+      {showExport && (
+        <div className="io-box">
+          <textarea id="export-json" ref={exportRef} readOnly value={exportConfig(cfg)} rows={6} />
+          <button onClick={copyExport}>კოპირება</button>
+        </div>
+      )}
+      <div className="io-box">
+        <label htmlFor="import-json" className="small">ან ჩასვით JSON აქ და დააჭირეთ „იმპორტს“:</label>
+        <textarea id="import-json" value={pasted} onChange={(e) => setPasted(e.target.value)} rows={3} />
+        <button onClick={() => importText(pasted)} disabled={!pasted.trim()}>{ka.mapping.import}</button>
       </div>
       {msg && <p className={msg.ok ? 't-ok' : 't-warn'} data-testid="import-msg">{msg.text}</p>}
 
