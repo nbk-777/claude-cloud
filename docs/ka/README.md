@@ -39,8 +39,9 @@ npm run build && npm run smoke   # ბრაუზერის ტესტი +
 ```
 
 ## გამოქვეყნება GitHub Pages-ზე
-`.github/workflows/pages.yml` ყოველ `main`-ზე push-ისას აწყობს და აქვეყნებს აპლიკაციას. ერთხელ საჭიროა:
-**Settings → Pages → Source: „GitHub Actions“**. private რეპოზიტორიისთვის Pages-ს შეიძლება ფასიანი გეგმა დასჭირდეს.
+ყოველი push ძირითად ბრენჩზე (`claude/great-pasteur-vsm2si`) უშვებს `.github/workflows/pages.yml`-ს: typecheck, ტესტები, აწყობა.
+შემდეგ აწყობილ `index.html`-ს აქვეყნებს **`main`** ბრენჩზე, რომელსაც Pages აჩვენებს („Deploy from a branch: main“).
+`main`-ში მხოლოდ აწყობილი აპლიკაციაა — ხელით არ შეცვალოთ.
 
 ## გვერდები (ჩანართები)
 

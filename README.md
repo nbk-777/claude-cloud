@@ -69,8 +69,11 @@ already, as they are in the build container. It is not listed in `package.json`.
 
 ## Publish (GitHub Pages)
 
-`.github/workflows/pages.yml` builds the app and publishes it on every push to `main`. It also runs the typecheck and the tests first.
-One-time setup: **Settings → Pages → Source: "GitHub Actions"**. A private repository may need a paid plan for Pages.
+Push to the default branch (`claude/great-pasteur-vsm2si`). `.github/workflows/pages.yml` runs the typecheck, the tests and the build, then:
+- commits the built `index.html` to **`main`**. `main` holds only the built app, which is what Pages serves in "Deploy from a branch: main" mode.
+- also publishes a Pages artifact, used if Pages is switched to "GitHub Actions" mode.
+
+Do not edit `main` by hand.
 
 ## Colour code
 
