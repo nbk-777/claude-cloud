@@ -298,10 +298,10 @@ export function PlanView({ cfg, state, view, setView, onManifoldMove, select, se
             <polyline points={pts([...retRoute].reverse())} className={`trunk-line${chFlow ? ' flow-anim trunk-flow' : ''}`} stroke={chFlow ? cool : '#6a8cc8'} markerEnd="url(#arrow)" />
           </g>
           <g {...click('pipeB')} className={'trunk dhw' + sel('pipeB')}>
-            <polyline points={pts(dhwRoute)} className={`trunk-line dhw-line${dhwOn ? ' flow-anim trunk-flow' : ''}`} stroke={dhwOn ? '#ff3b8d' : '#e9a3c2'} markerEnd="url(#arrow)" />
+            <polyline points={pts(dhwRoute)} className={`trunk-line dhw-line${dhwOn ? ' flow-anim trunk-flow' : ''}`} stroke={dhwOn ? '#f76707' : '#fbc49a'} markerEnd="url(#arrow)" />
           </g>
           <g {...click('pipeD')} className={'trunk' + sel('pipeD')}>
-            <polyline points={pts(coldRoute)} className={`trunk-line${dhwOn ? ' flow-anim trunk-flow' : ''}`} stroke="#3aa0ff" markerEnd="url(#arrow)" />
+            <polyline points={pts(coldRoute)} className={`trunk-line${dhwOn ? ' flow-anim trunk-flow' : ''}`} stroke="#0c8599" markerEnd="url(#arrow)" />
             <text x={-0.5} y={-1.02} fontSize={0.12} className="t-dim">{ka.plan.mains}</text>
           </g>
           <text x={2.4} y={-0.36} fontSize={0.12} className="t-dim" textAnchor="middle">⋯ {ka.plan.routeUnknown}</text>

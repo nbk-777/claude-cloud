@@ -2,6 +2,7 @@ import { ZONES, type AppConfig } from '../model/types';
 import { loopsOfZone, thermostatStatus, type SimState } from '../sim/engine';
 import { ka } from '../i18n/ka';
 import { ROOM_COLOR } from './util';
+import { ControlWiringDiagram } from './ControlWiringDiagram';
 
 interface Props {
   cfg: AppConfig;
@@ -147,6 +148,7 @@ export function WiringView({ cfg, state, select, selected }: Props) {
           </text>
         </g>
       </svg>
+      <ControlWiringDiagram cfg={cfg} state={state} select={select} selected={selected} />
       <div className="view-notes">
         <p className="t-warn">⚠ ზოგადი მოდელი: ძარღვი 1 = L, 2 = N (თერმოსტატის კვება), 3 = თერმოსტატის სიგნალი → ზონის კლემა. ოთახის ყველა აქტუატორი პარალელურად — ზონის აქტუატორის წყვილზე. 4 ოთახი იყენებს 8-დან 4 ზონას. კლემების წარწერები და ზონის დენის ლიმიტი დაუდასტურებელია.</p>
         <p>ჰოლი/გარდერობი მიერთებულია: {cfg.roomNames[cfg.owners.hall]} / {cfg.roomNames[cfg.owners.wardrobe]} ზონაზე. მონტაჟი — მხოლოდ კვალიფიციური ელექტრიკოსი; ქვაბის მიერთება — Ariston-ის სერვისის ტექნიკოსი. ეს არ არის მონტაჟის ინსტრუქცია.</p>

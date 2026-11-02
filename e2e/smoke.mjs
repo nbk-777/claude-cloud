@@ -164,6 +164,21 @@ await page.waitForSelector('[data-testid="w-short"]', { timeout: 90000 }).catch(
 check('scenario 9: short-cycling notice', await page.locator('[data-testid="w-short"]').isVisible());
 await page.screenshot({ path: `${shots}/09-bath-only-cycling.png` });
 
+// Equipment & installation page
+await page.click('[data-testid="scen-allFour"]');
+await page.click('[data-testid="tab-install"]');
+await page.waitForTimeout(8000);
+check('install: scene drawn', await page.locator('[data-testid="install-svg"]').isVisible());
+check('install: heating flow animates', (await page.locator('[data-testid="install-svg"]').getAttribute('data-ch')) === '1');
+check('install: control-wiring diagram drawn', await page.locator('[data-testid="cw-svg"]').isVisible());
+check('install: zone 1 actuators powered', (await page.locator('[data-testid="cw-act-L01"]').getAttribute('data-power')) === '1');
+check('install: TA1 wire live', (await page.locator('[data-testid="cw-ta1"]').getAttribute('data-live')) === '1');
+await page.check('[data-testid="install-shower"]');
+await page.waitForTimeout(500);
+check('install: shower → DHW lines animate', (await page.locator('[data-testid="install-svg"]').getAttribute('data-dhw')) === '1');
+await page.uncheck('[data-testid="install-shower"]');
+await page.screenshot({ path: `${shots}/14-install.png`, fullPage: true });
+
 // Mapping page + reassign + persistence across reload
 await page.click('[data-testid="tab-mapping"]');
 await page.selectOption('[data-testid="room-L01"]', 'hall');

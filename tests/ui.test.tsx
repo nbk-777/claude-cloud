@@ -105,3 +105,41 @@ describe('app shell', () => {
     expect(JSON.parse(localStorage.getItem('ufh-twin/config')!).thermostats.child.setpointC).toBe(21.5);
   });
 });
+
+import { InstallView } from '../src/ui/InstallView';
+
+describe('installation page', () => {
+  it('pipes animate only for the active medium; thermostats are operable', () => {
+    const cfg = only(['living']);
+    let s = runFor(createInitialState(cfg), cfg, cfg.sim.relayDelayS + 60);
+    const set = vi.fn();
+    const { rerender } = render(<InstallView cfg={cfg} state={s} select={() => {}} selected={null} setThermostat={set} setShower={() => {}} />);
+    expect(screen.getByTestId('install-svg').getAttribute('data-ch')).toBe('1');
+    expect(screen.getByTestId('pipe-A').getAttribute('class')).toContain('ipipe2-flow');
+    expect(screen.getByTestId('pipe-B').getAttribute('class')).toContain('idle');
+    expect(screen.getByTestId('install-relay').getAttribute('data-closed')).toBe('1');
+    fireEvent.click(screen.getByTestId('inst-child-plus'));
+    expect(set).toHaveBeenLastCalledWith('child', { setpointC: 21.5 });
+    s.dhw.showerOn = true;
+    s = runFor(s, cfg, 2);
+    rerender(<InstallView cfg={cfg} state={s} select={() => {}} selected={null} setThermostat={set} setShower={() => {}} />);
+    expect(screen.getByTestId('pipe-B').getAttribute('class')).toContain('ipipe2-flow');
+    expect(screen.getByTestId('pipe-A').getAttribute('class')).toContain('idle');
+  });
+});
+
+import { ControlWiringDiagram } from '../src/ui/ControlWiringDiagram';
+
+describe('control wiring diagram', () => {
+  it('signal, zone output, each actuator and TA1 follow the state', () => {
+    const cfg = only(['child']);
+    const s = runFor(createInitialState(cfg), cfg, cfg.sim.relayDelayS + 5);
+    render(<ControlWiringDiagram cfg={cfg} state={s} select={() => {}} selected={null} />);
+    expect(screen.getByTestId('cw-sig-child').getAttribute('data-live')).toBe('1');
+    expect(screen.getByTestId('cw-sig-living').getAttribute('data-live')).toBe('0');
+    expect(screen.getByTestId('cw-out-child').getAttribute('data-live')).toBe('1');
+    for (const id of loopsOfZone(cfg, 'child')) expect(screen.getByTestId(`cw-act-${id}`).getAttribute('data-power')).toBe('1');
+    expect(screen.getByTestId('cw-act-L01').getAttribute('data-power')).toBe('0');
+    expect(screen.getByTestId('cw-ta1').getAttribute('data-live')).toBe('1');
+  });
+});

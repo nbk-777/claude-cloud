@@ -8,7 +8,7 @@ thermostat signal → wiring-centre zone → 230 V NC actuators warm up and open
 boiler pump and burner start → hot water flows only through open loops → screed warms → air warms →
 setpoint reached → actuators close → relay opens → burner stops → pump overrun → floor keeps residual heat.
 
-The UI is in Georgian. Code, comments and docs are in English.
+The UI is in Georgian. Code and comments are in English. The docs are in English and in Georgian ([docs/ka/](docs/ka/README.md)).
 
 > **Prototype, not a design tool.** Every thermal number (losses, capacities, coupling, flows, kW, warm-up
 > times) is a labelled *demo assumption*. Nothing here is a heat-loss calculation, a pump/boiler sizing,
@@ -48,6 +48,7 @@ already, as they are in the build container. It is not listed in `package.json`.
 | Area | Where |
 |---|---|
 | Plan view (hero): traced room geometry, two balconies, 14 serpentine loops, floor-warmth bloom, air tint, draggable manifold placeholder, thermostats, boiler cabinet, shower, hydraulic and wiring layers, zoom/pan, room focus | `src/ui/PlanView.tsx` |
+| **Equipment & installation page**: the balcony boiler in its thermo-cabinet with valves, magnetic filter, condensate, flue (context), isolator; wall passage; manifold cabinet with actuators, flow meters, air vents; wiring centre; 4 thermostats; shower. Every part is named, and one colour code is used for flow/return/DHW/cold. Includes a terminal-to-terminal **control-wiring diagram** (thermostat → zone → actuators on valves → relay → TA1) and a "what connects to what / who installs it" table | `src/ui/InstallView.tsx`, `src/ui/ControlWiringDiagram.tsx` |
 | Boiler: front panel (LCD, knob, gauge, flame, TA1 terminal strip, A–E stubs) and an internal cutaway (HX/burner, pump, diverter, plate HX, flow switch, filter, vessel, safety valve, pressure sensor, filling, by-pass); A–I connections; shower | `src/ui/BoilerView.tsx` |
 | Manifold close-up: brass bars, 14 actuators on the flow bar, flow meters and blue caps on the return bar, gauges, room brackets, command vs. simulated feedback | `src/ui/ManifoldView.tsx` |
 | Wiring centre: 8 zones (L / N / signal in, actuator pair out), DIP 0/2/5 min, relay NO/COM/NC → TA1, pump L1/N1, fuse | `src/ui/WiringView.tsx` |
@@ -58,6 +59,23 @@ already, as they are in the build container. It is not listed in `package.json`.
 | Typed config, validation, versioned persistence | `src/model/config.ts`, `types.ts` |
 | Plan geometry and loop layout generator | `src/model/plan.ts`, `loopGeometry.ts` |
 | Sources, facts, equipment, checklist, inspector texts | `src/data/reference.ts` |
+
+## Publish (GitHub Pages)
+
+`.github/workflows/pages.yml` builds the app and publishes it on every push to `main`. It also runs the typecheck and the tests first.
+One-time setup: **Settings → Pages → Source: "GitHub Actions"**. A private repository may need a paid plan for Pages.
+
+## Colour code
+
+| Line | Colour |
+|---|---|
+| heating flow (A) | red |
+| heating return (E) | blue |
+| domestic hot water (B) | orange |
+| cold water (D) | teal |
+| gas (C) | yellow, context only |
+| condensate (I) | grey |
+| wires | brown L, blue N, green signal, orange relay→TA1 |
 
 ## Scenarios (sidebar buttons)
 
@@ -72,7 +90,7 @@ already, as they are in the build container. It is not listed in `package.json`.
 9. Bathroom only (low load → short-cycling)
 10. Floor safety trip (fault 116 style; DHW also stops)
 
-## Docs
+## Docs (Georgian versions in [docs/ka/](docs/ka/README.md))
 
 - [docs/RESEARCH.md](docs/RESEARCH.md): the sources I actually read, with page references
 - [docs/ASSUMPTIONS.md](docs/ASSUMPTIONS.md): user facts, manufacturer facts, assumptions, unverified items and conflicts

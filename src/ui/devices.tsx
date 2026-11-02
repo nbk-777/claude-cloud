@@ -202,9 +202,9 @@ export function BoilerFrontDevice(p: BoilerFrontProps) {
       {/* bottom pipe stubs A–E */}
       {[
         ['A', 48, '#e03131'],
-        ['B', 84, '#ff3b8d'],
+        ['B', 84, '#f76707'],
         ['C', 120, '#fab005'],
-        ['D', 156, '#3aa0ff'],
+        ['D', 156, '#0c8599'],
         ['E', 192, '#4c8de0'],
       ].map(([k, x, c]) => (
         <g key={k as string} {...part('pipe' + k)}>
@@ -270,7 +270,7 @@ export function BoilerFrontDevice(p: BoilerFrontProps) {
 // ── shower ──────────────────────────────────────────────────────────────────
 
 export function ShowerDevice({ on, hot, children }: { on: boolean; hot: boolean; children?: ReactNode }) {
-  const water = hot ? '#ff6fa8' : '#4dabf7';
+  const water = hot ? '#f76707' : '#0c8599';
   return (
     <g className={`dev-shower${on ? ' is-on' : ''}`} data-testid="shower-device" data-on={on ? '1' : '0'}>
       <path d="M0,60 L0,0 L30,0 L30,12" fill="none" stroke="#adb5bd" strokeWidth={5} strokeLinecap="round" />

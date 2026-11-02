@@ -58,7 +58,7 @@ svg.plan { width: 100%; height: min(70vh, 720px); display: block; touch-action: 
 .popover { position: absolute; top: 10px; right: 10px; width: 330px; z-index: 5; box-shadow: 0 6px 24px rgba(0,0,0,.18); border-radius: 10px; }
 .legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11px; padding: 6px 10px; border-top: 1px solid var(--line); background: #fff; }
 .sw { display: inline-block; width: 18px; height: 4px; vertical-align: middle; margin-right: 3px; }
-.sw-flow { background: #e03131; } .sw-ret { background: #4c8de0; } .sw-dhw { background: #ff3b8d; } .sw-cold { background: #3aa0ff; }
+.sw-flow { background: #e03131; } .sw-ret { background: #1c7ed6; } .sw-dhw { background: #f76707; } .sw-cold { background: #0c8599; }
 .sw-wire { background: var(--wire); } .sw-dash { background: repeating-linear-gradient(90deg, #555 0 4px, transparent 4px 7px); }
 .sw-air { height: 10px; background: linear-gradient(90deg, #b0cdf0, #f6f2e9, #fac496); }
 .sw-glow { height: 10px; background: radial-gradient(#ff7a1a, transparent); }
@@ -173,7 +173,7 @@ svg.plan { width: 100%; height: min(70vh, 720px); display: block; touch-action: 
 @keyframes spin { to { transform: rotate(360deg); } }
 .valve { fill: #e9ecef; stroke: #333; stroke-width: 2; }
 .plate { fill: #ffe3e3; stroke: #333; }
-.fs { fill: #e9ecef; stroke: #333; } .fs.on { fill: #ff3b8d; }
+.fs { fill: #e9ecef; stroke: #333; } .fs.on { fill: #f76707; }
 .filter { fill: #fff9db; stroke: #333; }
 .vessel { fill: #ffc9c9; stroke: #333; stroke-width: 2; }
 .gauge { fill: #fff; stroke: #333; stroke-width: 2; }
@@ -240,3 +240,27 @@ code { word-break: break-all; }
 .io-box textarea { width: 100%; font-family: ui-monospace, monospace; font-size: 12px; }
 .page { overflow-x: auto; min-width: 0; }
 .app { overflow-x: hidden; }
+
+/* installation page */
+.install { display: flex; flex-direction: column; gap: 8px; }
+.install-head { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between; }
+.pipe-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; }
+.pipe-legend i { display: inline-block; width: 26px; height: 7px; border-radius: 4px; vertical-align: middle; margin-right: 4px; }
+.install-svg { width: 100%; height: auto; display: block; background: #fff; border-radius: 6px; }
+.ipipe2 { fill: none; stroke-width: 10; stroke-linejoin: round; stroke-linecap: round; }
+.ipipe2.idle { opacity: .45; }
+.ipipe2-flow { stroke-dasharray: 18 9; animation-name: flowpx; }
+.cable-px { animation-name: flowpx; }
+.lbl { fill: #212529; }
+.lbl-halo { paint-order: stroke; stroke: #ffffff; stroke-width: 4px; stroke-linejoin: round; }
+.callout text { font-weight: 600; }
+.conn-table h3 { margin: 6px 0; font-size: 15px; }
+.tbl-scroll { overflow-x: auto; }
+.cw-wrap { border-top: 1px solid var(--line); padding-top: 8px; }
+.cw-wrap h3 { margin: 4px 0; font-size: 15px; }
+.cw-svg { width: 100%; min-width: 900px; height: auto; display: block; background: #fff; }
+.cw-live { stroke-dasharray: 12 6; animation: flowpx 1.2s linear infinite; filter: drop-shadow(0 0 2px rgba(255, 190, 0, .8)); }
+.paused .cw-live { animation-play-state: paused; }
+.cw-steps { margin: 6px 0; padding-left: 22px; }
+.cw-steps li { padding: 2px 4px; border-radius: 4px; }
+.cw-steps li.on { background: #fff4e6; font-weight: 600; }

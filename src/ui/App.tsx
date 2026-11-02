@@ -8,12 +8,13 @@ import { DEFAULT_VIEW, PlanView, focusView, type ViewBox } from './PlanView';
 import { BoilerView } from './BoilerView';
 import { ManifoldView } from './ManifoldView';
 import { WiringView } from './WiringView';
+import { InstallView } from './InstallView';
 import { CommandChainPanel, EventLog, InspectorPanel, StatusStrip, ThermostatWidget } from './Panels';
 import { ChecklistPage, EquipmentPage, MappingPage, OpenItemsPage, SourcesPage } from './Pages';
 import { useSimulation } from './useSimulation';
 
-type Tab = 'plan' | 'boiler' | 'manifold' | 'wiring' | 'mapping' | 'equipment' | 'checklist' | 'open' | 'sources';
-const TABS: Tab[] = ['plan', 'boiler', 'manifold', 'wiring', 'mapping', 'equipment', 'checklist', 'open', 'sources'];
+type Tab = 'plan' | 'install' | 'boiler' | 'manifold' | 'wiring' | 'mapping' | 'equipment' | 'checklist' | 'open' | 'sources';
+const TABS: Tab[] = ['plan', 'install', 'boiler', 'manifold', 'wiring', 'mapping', 'equipment', 'checklist', 'open', 'sources'];
 const SPEEDS = [1, 5, 15, 30, 60];
 
 export function App({ initial }: { initial?: AppConfig }) {
@@ -72,7 +73,7 @@ export function App({ initial }: { initial?: AppConfig }) {
       <div className="banner warn" data-testid="cabinet-warning">⚠ {ka.warnings.cabinet}</div>
       <StatusStrip cfg={cfg} state={state} />
 
-      <main className={tab === 'plan' || tab === 'boiler' || tab === 'manifold' || tab === 'wiring' ? 'with-side' : ''}>
+      <main className={tab === 'plan' || tab === 'install' || tab === 'boiler' || tab === 'manifold' || tab === 'wiring' ? 'with-side' : ''}>
         <div className="stage">
           {tab === 'plan' && (
             <>
@@ -143,6 +144,16 @@ export function App({ initial }: { initial?: AppConfig }) {
               </div>
               <BoilerView cfg={cfg} state={state} select={select} selected={selected} />
             </>
+          )}
+          {tab === 'install' && (
+            <InstallView
+              cfg={cfg}
+              state={state}
+              select={select}
+              selected={selected}
+              setThermostat={setThermostat}
+              setShower={(on) => sim.mutate((s) => { s.dhw.showerOn = on; })}
+            />
           )}
           {tab === 'manifold' && <ManifoldView cfg={cfg} state={state} select={select} selected={selected} />}
           {tab === 'wiring' && <WiringView cfg={cfg} state={state} select={select} selected={selected} />}

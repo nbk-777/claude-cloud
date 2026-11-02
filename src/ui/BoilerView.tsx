@@ -69,8 +69,8 @@ export function BoilerView({ cfg, state, select, selected }: Props) {
             <polyline points="560,420 520,420 520,380" className={'ipipe' + (ch || dhw ? ' flow-anim ipipe-flow' : '')} stroke={cool} />
             <polyline points="580,200 640,200 640,330" className={'ipipe' + (ch || dhw ? ' flow-anim ipipe-flow' : '')} stroke={hot} />
             {/* DHW circuit */}
-            <polyline points="540,560 540,500 460,500 460,460" className={'ipipe' + (dhw ? ' flow-anim ipipe-flow' : '')} stroke="#3aa0ff" />
-            <polyline points="430,460 400,460 400,560" className={'ipipe' + (dhw ? ' flow-anim ipipe-flow' : '')} stroke={dhw ? '#ff3b8d' : '#e9a3c2'} />
+            <polyline points="540,560 540,500 460,500 460,460" className={'ipipe' + (dhw ? ' flow-anim ipipe-flow' : '')} stroke="#0c8599" />
+            <polyline points="430,460 400,460 400,560" className={'ipipe' + (dhw ? ' flow-anim ipipe-flow' : '')} stroke={dhw ? '#f76707' : '#fbc49a'} />
 
             {/* pump */}
             <g {...comp('pump')}>
@@ -158,11 +158,11 @@ export function BoilerView({ cfg, state, select, selected }: Props) {
           <text x={20} y={610} fontSize={12}>E ← კოლექტორიდან (დაბრუნება) {fmt(b.returnC)}°C</text>
         </g>
         <g {...comp('pipeB')}>
-          <polyline points="400,562 400,600 880,600 880,662" className={'xpipe' + (dhw ? ' flow-anim xpipe-flow' : '')} stroke={dhw ? '#ff3b8d' : '#e9a3c2'} markerEnd="url(#barrow)" />
+          <polyline points="400,562 400,600 880,600 880,662" className={'xpipe' + (dhw ? ' flow-anim xpipe-flow' : '')} stroke={dhw ? '#f76707' : '#fbc49a'} markerEnd="url(#barrow)" />
           <text x={700} y={592} fontSize={12}>B → შხაპი {dhw ? `${fmt(state.dhw.outC)}°C` : ''}</text>
         </g>
         <g {...comp('pipeD')}>
-          <polyline points="940,690 940,660 540,660 540,564" className={'xpipe' + (dhw ? ' flow-anim xpipe-flow' : '')} stroke="#3aa0ff" markerEnd="url(#barrow)" />
+          <polyline points="940,690 940,660 540,660 540,564" className={'xpipe' + (dhw ? ' flow-anim xpipe-flow' : '')} stroke="#0c8599" markerEnd="url(#barrow)" />
           <text x={790} y={655} fontSize={12}>D ← ცივი წყალი {cfg.sim.coldWaterC}°C</text>
         </g>
         <g {...comp('pipeC')}>
