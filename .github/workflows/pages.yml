@@ -4,7 +4,9 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [main]
+    # The github-pages environment only accepts deploys from the repository's default branch.
+    # The default branch is currently claude/great-pasteur-vsm2si; main is listed for when it becomes default.
+    branches: [main, claude/great-pasteur-vsm2si]
   workflow_dispatch:
 
 permissions:
