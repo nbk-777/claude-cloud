@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { loadConfig, saveConfig } from '../model/config';
 import { ROOMS, ZONES, type AppConfig, type Point, type RoomId, type ZoneId } from '../model/types';
 import { chLimits } from '../sim/engine';
@@ -12,18 +12,32 @@ import { InstallView } from './InstallView';
 import { CommandChainPanel, EventLog, InspectorPanel, StatusStrip, ThermostatWidget } from './Panels';
 import { ChecklistPage, EquipmentPage, MappingPage, OpenItemsPage, SourcesPage } from './Pages';
 import { useSimulation } from './useSimulation';
+import { Balcony3DPage } from './balcony3d/Balcony3DPage';
+import { assembledExample, toOverrides, type Connection } from '../sim/connections';
 
-type Tab = 'plan' | 'install' | 'boiler' | 'manifold' | 'wiring' | 'mapping' | 'equipment' | 'checklist' | 'open' | 'sources';
-const TABS: Tab[] = ['plan', 'install', 'boiler', 'manifold', 'wiring', 'mapping', 'equipment', 'checklist', 'open', 'sources'];
+type Tab = 'plan' | 'install' | 'balcony3d' | 'boiler' | 'manifold' | 'wiring' | 'mapping' | 'equipment' | 'checklist' | 'open' | 'sources';
+const TABS: Tab[] = ['plan', 'install', 'balcony3d', 'boiler', 'manifold', 'wiring', 'mapping', 'equipment', 'checklist', 'open', 'sources'];
 const SPEEDS = [1, 5, 15, 30, 60];
 
 export function App({ initial }: { initial?: AppConfig }) {
   const [cfg, setCfgRaw] = useState<AppConfig>(() => initial ?? loadConfig());
   const setCfg = useCallback((c: AppConfig) => setCfgRaw(c), []);
   useEffect(() => saveConfig(cfg), [cfg]);
-  const sim = useSimulation(cfg);
+  const [tab, setTab] = useState<Tab>(() => (typeof location !== 'undefined' && location.hash === '#balcony-3d' ? 'balcony3d' : 'plan'));
+  // conceptual connections (3D page): applied to the simulation only while that page is open
+  const [connections, setConnections] = useState<Connection[]>(() => assembledExample());
+  const [connectMode, setConnectMode] = useState(false);
+  const overrides = useMemo(() => (tab === 'balcony3d' && connectMode ? toOverrides(connections) : undefined), [tab, connectMode, connections]);
+  const sim = useSimulation(cfg, overrides);
   const { state } = sim;
-  const [tab, setTab] = useState<Tab>('plan');
+  useEffect(() => {
+    try {
+      if (tab === 'balcony3d') history.replaceState(null, '', '#balcony-3d');
+      else if (location.hash === '#balcony-3d') history.replaceState(null, '', location.pathname + location.search);
+    } catch {
+      /* ignore */
+    }
+  }, [tab]);
   const [view, setView] = useState<ViewBox>(DEFAULT_VIEW);
   const [selected, setSelected] = useState<string | null>(null);
   const [openThermo, setOpenThermo] = useState<ZoneId | null>(null);
@@ -153,6 +167,18 @@ export function App({ initial }: { initial?: AppConfig }) {
               selected={selected}
               setThermostat={setThermostat}
               setShower={(on) => sim.mutate((s) => { s.dhw.showerOn = on; })}
+            />
+          )}
+          {tab === 'balcony3d' && (
+            <Balcony3DPage
+              cfg={cfg}
+              state={state}
+              paused={sim.paused}
+              setThermostat={setThermostat}
+              connections={connections}
+              setConnections={setConnections}
+              connectMode={connectMode}
+              setConnectMode={setConnectMode}
             />
           )}
           {tab === 'manifold' && <ManifoldView cfg={cfg} state={state} select={select} selected={selected} />}

@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AppConfig } from '../model/types';
-import { Clock, createInitialState, step, syncLoops, type SimState } from '../sim/engine';
+import { Clock, createInitialState, step, syncLoops, type ConnectionOverrides, type SimState } from '../sim/engine';
 
 /**
  * Drives the pure simulation from requestAnimationFrame. The engine itself is frame-rate
  * independent: wall time × speed is converted to whole fixed sub-steps by Clock.
  */
-export function useSimulation(cfg: AppConfig) {
+export function useSimulation(cfg: AppConfig, overrides?: ConnectionOverrides) {
   const cfgRef = useRef(cfg);
   cfgRef.current = cfg;
+  const ovRef = useRef(overrides);
+  ovRef.current = overrides;
   const stateRef = useRef<SimState>(createInitialState(cfg));
   const clockRef = useRef(new Clock(cfg.sim.speed));
   const [state, setState] = useState<SimState>(stateRef.current);
@@ -25,7 +27,7 @@ export function useSimulation(cfg: AppConfig) {
       const n = clockRef.current.tick(dt);
       if (n > 0) {
         let s = syncLoops(stateRef.current, cfgRef.current);
-        for (let i = 0; i < n; i++) s = step(s, cfgRef.current);
+        for (let i = 0; i < n; i++) s = step(s, cfgRef.current, undefined, ovRef.current);
         stateRef.current = s;
         setState(s);
       }

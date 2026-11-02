@@ -264,3 +264,31 @@ code { word-break: break-all; }
 .cw-steps { margin: 6px 0; padding-left: 22px; }
 .cw-steps li { padding: 2px 4px; border-radius: 4px; }
 .cw-steps li.on { background: #fff4e6; font-weight: 600; }
+
+/* 3D balcony page */
+.b3d { display: flex; flex-direction: column; gap: 8px; }
+.b3d-head h2 { margin: 0; font-size: 18px; }
+.b3d-head p { margin: 2px 0 0; }
+.b3d-disclaimer { font-size: 12px; background: #fff4e6; border: 1px solid #ffd8a8; color: #7a3e00; padding: 6px 10px; border-radius: 6px; }
+.b3d-grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 10px; }
+@media (max-width: 1000px) { .b3d-grid { grid-template-columns: 1fr; } }
+.b3d-stage { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.b3d-toolbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.b3d-canvas { position: relative; height: min(68vh, 680px); min-height: 320px; border-radius: 8px; overflow: hidden; background: #cfe3f2; border: 1px solid var(--line); touch-action: none; }
+.b3d-canvas canvas { display: block; }
+.b3d-overlay { position: absolute; inset: 0; display: grid; place-items: center; padding: 20px; text-align: center; font-size: 14px; color: #1f2328; background: rgba(255,255,255,.7); }
+.b3d-legend { position: absolute; left: 8px; bottom: 8px; display: flex; flex-wrap: wrap; gap: 4px 10px; background: rgba(255,255,255,.9); padding: 5px 8px; border-radius: 6px; font-size: 12px; pointer-events: none; }
+.b3d-legend i { display: inline-block; width: 18px; height: 5px; border-radius: 3px; vertical-align: middle; margin-right: 3px; }
+.b3d-side { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.b3d-th { display: grid; grid-template-columns: 1fr auto auto auto; grid-template-areas: "n t s p" "b b b b"; gap: 2px 8px; align-items: center; padding: 5px 4px; border-radius: 6px; }
+.b3d-th.sel { background: #fff9db; }
+.b3d-th .badge { grid-area: b; justify-self: start; }
+.b3d-sp { display: inline-flex; gap: 4px; align-items: center; font-variant-numeric: tabular-nums; }
+.b3d-sp button { width: 26px; height: 26px; padding: 0; border-radius: 50%; }
+.b3d-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+.b3d-row select { max-width: 100%; min-width: 0; flex: 1 1 140px; }
+.b3d-status { list-style: none; padding: 0; margin: 6px 0; }
+.b3d-status li { padding: 2px 6px; border-radius: 4px; margin-bottom: 2px; }
+.b3d-status li.ok { background: #ebfbee; }
+.b3d-status li.bad { background: #fff0f0; color: #a51111; }
+.b3d-links { padding-left: 16px; margin: 4px 0; }

@@ -8,6 +8,7 @@ export const ka = {
   tabs: {
     plan: 'გეგმა',
     install: 'მოწყობილობები და მონტაჟი',
+    balcony3d: '3D Balcony Installation',
     boiler: 'ქვაბი და მიერთებები',
     manifold: 'კოლექტორი',
     wiring: 'გაყვანილობის ცენტრი',

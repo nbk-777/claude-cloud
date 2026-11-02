@@ -208,8 +208,23 @@ export function chLimits(cfg: AppConfig): readonly [number, number] {
   return cfg.sim.chRange === 'low' ? BOILER.lowRange : BOILER.highRange;
 }
 
+/**
+ * Optional conceptual-wiring overrides (used only by the 3D page's "Connect components" mode).
+ * Omitted or `undefined` fields mean "connected", so default behaviour is unchanged.
+ */
+export interface ConnectionOverrides {
+  /** thermostat signal reaches its controller zone input */
+  signal?: Partial<Record<ZoneId, boolean>>;
+  /** controller zone output reaches that zone's actuator group */
+  actuatorPower?: Partial<Record<ZoneId, boolean>>;
+  /** controller boiler-demand output reaches the boiler demand input */
+  demandLink?: boolean;
+  /** boiler supply → manifold supply and manifold return → boiler return are both connected */
+  waterPath?: boolean;
+}
+
 /** One fixed sub-step. Returns a NEW state; the input is not mutated. */
-export function step(prev: SimState, cfg: AppConfig, dt: number = SUB_STEP_S): SimState {
+export function step(prev: SimState, cfg: AppConfig, dt: number = SUB_STEP_S, ov?: ConnectionOverrides): SimState {
   // Clone everything except the append-only arrays (copy-on-write below) for speed.
   const { history, events, ...rest } = prev;
   const s: SimState = { ...structuredClone(rest), history, events };
@@ -238,13 +253,14 @@ export function step(prev: SimState, cfg: AppConfig, dt: number = SUB_STEP_S): S
   // Boiler relay (COM–NO → TA1) closes after the wiring-centre DIP delay.
   const boilerCallDelay = sim.relayDelayS;
   for (const z of ZONES) {
-    const out = s.rooms[z].calling;
+    const out = s.rooms[z].calling && ov?.signal?.[z] !== false;
     if (out !== s.controller.zoneOut[z]) log(s, out ? 'ev.zoneOn' : 'ev.zoneOff', z);
     s.controller.zoneOut[z] = out;
     s.controller.zoneOnS[z] = out ? s.controller.zoneOnS[z] + dt : 0;
   }
   // No end-switch feedback is modelled: the relay closes on a timer only.
-  const ta1 = ZONES.some((z) => s.controller.zoneOut[z] && s.controller.zoneOnS[z] >= boilerCallDelay);
+  const ta1 =
+    ov?.demandLink !== false && ZONES.some((z) => s.controller.zoneOut[z] && s.controller.zoneOnS[z] >= boilerCallDelay);
   if (ta1 !== s.controller.ta1Closed) log(s, ta1 ? 'ev.ta1Close' : 'ev.ta1Open');
   s.controller.ta1Closed = ta1;
 
@@ -253,7 +269,7 @@ export function step(prev: SimState, cfg: AppConfig, dt: number = SUB_STEP_S): S
     const ls = s.loops[l.id];
     if (!ls) continue;
     const zone = controlZoneOf(l.room, cfg.owners);
-    const cmd = zone ? s.controller.zoneOut[zone] : false;
+    const cmd = zone ? s.controller.zoneOut[zone] && ov?.actuatorPower?.[zone] !== false : false;
     const a = ls.act;
     if (cmd !== a.cmd) {
       a.cmd = cmd;
@@ -285,7 +301,7 @@ export function step(prev: SimState, cfg: AppConfig, dt: number = SUB_STEP_S): S
     const ls = s.loops[l.id];
     return acc + (ls && !s.faults.stuck[l.id] ? ls.act.pos : 0);
   }, 0);
-  const anyPath = openFrac > 0.05;
+  const anyPath = openFrac > 0.05 && ov?.waterPath !== false;
 
   // DHW request (flow switch needs ≥ min flow, manual: 2 L/min)
   const dhwReq = s.dhw.showerOn && sim.showerFlowLpm >= BOILER.dhwMinFlowLpm;
@@ -368,7 +384,7 @@ export function step(prev: SimState, cfg: AppConfig, dt: number = SUB_STEP_S): S
 
   // 5 ── hydraulics & heat into floors ─────────────────────────────────────
   const byRoom = loopsByRoom(cfg.loops);
-  const chFeed = b.pumpOn && b.diverter === 'CH';
+  const chFeed = b.pumpOn && b.diverter === 'CH' && ov?.waterPath !== false;
   let loopHeatTotal = 0;
   let retWeighted = 0;
   let flowTotal = 0;
@@ -448,10 +464,10 @@ export function step(prev: SimState, cfg: AppConfig, dt: number = SUB_STEP_S): S
 }
 
 /** Advance by `seconds` using fixed sub-steps (deterministic regardless of frame rate). */
-export function runFor(state: SimState, cfg: AppConfig, seconds: number): SimState {
+export function runFor(state: SimState, cfg: AppConfig, seconds: number, ov?: ConnectionOverrides): SimState {
   let s = state;
   const n = Math.round(seconds / SUB_STEP_S);
-  for (let i = 0; i < n; i++) s = step(s, cfg, SUB_STEP_S);
+  for (let i = 0; i < n; i++) s = step(s, cfg, SUB_STEP_S, ov);
   return s;
 }
 
