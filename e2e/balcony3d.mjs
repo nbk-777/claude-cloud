@@ -70,6 +70,21 @@ try {
   await p.click('[data-testid="b3d-name-child"]'); await p.waitForTimeout(300);
   ok('thermostat inspector lists its loops', /მართავს: L07, L08/.test(await p.textContent('[data-testid="b3d-insp-state"]')));
   await p.locator('[data-testid="b3d-canvas-host"]').screenshot({ path: out + '/b3d-thermo-highlight.png' });
+  // open the zone controller and look inside
+  await p.click('[data-testid="ctrl-open"]');
+  await p.waitForTimeout(2500);
+  ok('controller opens (legend + inspector)', (await p.locator('[data-testid="ctrl-legend"]').isVisible()) && /კონტროლერი/.test(await p.textContent('[data-testid="b3d-insp-name"]')));
+  ok('controller open button toggles state', (await p.getAttribute('[data-testid="ctrl-open"]', 'aria-pressed')) === 'true');
+  { const bb = await p.locator('[data-testid="b3d-canvas-host"]').boundingBox(); await p.screenshot({ path: out + '/b3d-controller-open.png', clip: bb, timeout: 120000 }); }
+  await p.click('[data-testid="cam-thermostats"]');
+  await p.waitForTimeout(2000);
+  { const bb = await p.locator('[data-testid="b3d-canvas-host"]').boundingBox(); await p.screenshot({ path: out + '/b3d-thermostat-cables.png', clip: bb, timeout: 120000 }); }
+  await p.click('[data-testid="cam-full"]');
+  await p.waitForTimeout(2000);
+  { const bb = await p.locator('[data-testid="b3d-canvas-host"]').boundingBox(); await p.screenshot({ path: out + '/b3d-full-cables.png', clip: bb, timeout: 120000 }); }
+  await p.click('[data-testid="ctrl-open"]');
+  await p.waitForTimeout(500);
+  ok('controller closes again', (await p.getAttribute('[data-testid="ctrl-open"]', 'aria-pressed')) === 'false');
   // connect mode
   await p.check('[data-testid="connect-toggle"]');
   ok('connect panel visible', await p.locator('[data-testid="connect-panel"]').isVisible());

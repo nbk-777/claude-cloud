@@ -18,7 +18,16 @@ The scene renders the **existing** simulation state and never runs its own simul
 - **Manifold:** **directly below the boiler**. The supply bar (upper) carries 14 valve bodies with thermal actuators. The return bar (lower) carries 14 flow meters, whose floats rise with simulated flow, and blue caps.
   - Below are 14 supply/return drop pairs going into a trunking box, with loop numbers and room-coloured tags. The route to the rooms is illustrative.
   - The boiler supply and return pipes have rounded bends, isolating valves and fittings.
-- **Zone controller:** wall-mounted next to the manifold, with four zone LEDs and a boiler-demand LED. One cable runs to the actuator group and one to the boiler's demand input.
+- **Zone controller (openable):** the button **"კონტროლერის გახსნა"** ("open controller"), or the button in the inspector, swings the translucent hinged cover open and moves the camera inside. The circuit board is labelled in Georgian:
+  - **Zones:** Z1–Z8 input terminals (L / N / S); Z1–Z4 are used and Z5–Z8 are free. Each zone also has a status LED and an output pair (A~ / A~).
+  - **Other parts:** power L / N / PE, a 15 A fuse, the boiler relay with NO / COM / NC, DIP delay switches (0 / 2 / 5 min; the lever mapping is illustrative), and the L1 / N1 pump output (unused).
+  - **Live states:** zone LEDs, the signal core of each thermostat cable, the actuator cores and the relay cores glow from the existing simulation state. Every terminal, wire and part can be clicked; the inspector shows what it does and its simulated state.
+- **Thermostat wiring:** each thermostat has a sheathed 3-core cable (brown L, blue N, green signal). It runs through a translucent wall duct to the controller's top cable glands. Inside, the cores go to that zone's L / N / S terminals.
+  - The thermostat panel is ordered Z1 living, Z2 child, Z3 main, Z4 bath, the same as the controller, so the cables do not cross.
+- **Actuator wiring:** each actuator has its own cable, run through a lower duct to its zone's bottom gland and the A~ terminals. All actuators of a zone are in parallel.
+- **Relay wiring:** two orange cores run from the relay's COM–NO to a cable that goes to the boiler's demand input. It is a dry contact; 230 V never goes to the boiler terminal.
+- In connect mode, a missing signal or actuator link is shown as a faded cable.
+- The wiring model is generic and the terminal labels depend on the model; the real wiring needs a qualified electrician.
 - **Room thermostats:** Living Room, Bathroom, Child's Bedroom, Main Bedroom. They are **shown together on one panel for illustration**; in reality each is in its own room. Their displays show air temperature, setpoint and a heat-demand flame.
 - **Context-only infrastructure:** gas supply, flue, pressure-relief discharge, and mains power with an isolator. Each is labelled *"Professional installation required"*. None of these can be connected or changed.
 

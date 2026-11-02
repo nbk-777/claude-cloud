@@ -46,19 +46,22 @@ export interface SceneSnapshot {
   paused: boolean;
   speed: number;
   chSetpoint: number;
+  relayDelayS: number;
   connectMode: boolean;
   summary: ConnectionSummary;
   connections: Connection[];
   pendingPort: string | null;
 }
 
-export type CameraPreset = 'full' | 'boiler' | 'manifold' | 'controller' | 'thermostats';
+export type CameraPreset = 'full' | 'boiler' | 'manifold' | 'controller' | 'thermostats' | 'controllerInside';
 
 export interface SceneApi {
   update(s: SceneSnapshot): void;
   setSelection(id: string | null, loopIds: string[]): void;
   setCamera(p: CameraPreset): void;
   setExplain(on: boolean): void;
+  /** Open / close the zone controller's cover. */
+  setControllerOpen(open: boolean): void;
   /** CSS-pixel position (relative to the canvas) of a clickable 3D button, for tests/automation. */
   buttonScreenPos(id: string): { x: number; y: number } | null;
   cameraDistanceTo(x: number, y: number, z: number): number;
@@ -79,8 +82,11 @@ const RET_Z = 0.08;
 const BAR_R = 0.017;
 const PORT_X = (i: number) => -0.325 + i * 0.05;
 const DUCT_TOP = 0.27;
-const CTRL = { x: 0.82, y: 0.86, z: 0.035, w: 0.36, h: 0.22, d: 0.06 };
-const THERMO_X: Record<ZoneId, number> = { living: -1.36, bath: -1.14, child: -0.92, main: -0.7 };
+const CTRL = { x: 0.8, y: 0.84, z: 0.035, w: 0.36, h: 0.26, d: 0.07 };
+/** Zone order on the controller PCB: Z1 living, Z2 child, Z3 main, Z4 bath (matches the app's zone numbering). */
+const ZONE_ORDER_PCB: ZoneId[] = ['living', 'child', 'main', 'bath'];
+// panel order = controller zone order (Z1 living, Z2 child, Z3 main, Z4 bath) so cables do not cross
+const THERMO_X: Record<ZoneId, number> = { living: -1.36, child: -1.14, main: -0.92, bath: -0.7 };
 const THERMO_Y = 1.45;
 
 export const PORT_POS: Record<string, [number, number, number]> = {
@@ -88,13 +94,14 @@ export const PORT_POS: Record<string, [number, number, number]> = {
   'boiler.return': [0.12, 1.29, RET_Z],
   'manifold.supply': [-0.43, SUP_Y, SUP_Z],
   'manifold.return': [0.43, RET_Y, RET_Z],
-  'controller.demand': [CTRL.x + 0.15, CTRL.y, CTRL.z + 0.04],
+  'controller.demand': [CTRL.x + 0.11, CTRL.y + CTRL.h / 2 + 0.03, CTRL.z],
   'boiler.demand': [0.17, 1.34, 0.31],
 };
-ZONE_ORDER.forEach((z, i) => {
+ZONE_ORDER.forEach((z) => {
+  const i = ZONE_ORDER_PCB.indexOf(z);
   PORT_POS[`thermostat.${z}`] = [THERMO_X[z], THERMO_Y - 0.08, 0.03];
-  PORT_POS[`controller.in.${z}`] = [CTRL.x - 0.12 + i * 0.06, CTRL.y + 0.08, CTRL.z + 0.04];
-  PORT_POS[`controller.out.${z}`] = [CTRL.x - 0.12 + i * 0.06, CTRL.y - 0.08, CTRL.z + 0.04];
+  PORT_POS[`controller.in.${z}`] = [CTRL.x - 0.15 + i * 0.0275, CTRL.y + CTRL.h / 2 + 0.03, CTRL.z];
+  PORT_POS[`controller.out.${z}`] = [CTRL.x - 0.15 + i * 0.0275, CTRL.y - CTRL.h / 2 - 0.03, CTRL.z];
 });
 
 const CONTEXT_POS: Record<string, [number, number, number]> = {
@@ -108,7 +115,8 @@ const CAMERAS: Record<CameraPreset, { pos: [number, number, number]; target: [nu
   full: { pos: [1.75, 2.15, 2.75], target: [-0.1, 1.05, 0.2] },
   boiler: { pos: [0.55, 1.8, 1.15], target: [0, 1.6, 0.15] },
   manifold: { pos: [0.35, 0.95, 1.0], target: [0, 0.66, 0.1] },
-  controller: { pos: [1.25, 1.05, 0.85], target: [0.8, 0.85, 0.03] },
+  controller: { pos: [1.2, 1.0, 0.85], target: [0.8, 0.85, 0.03] },
+  controllerInside: { pos: [0.86, 0.9, 0.36], target: [0.8, 0.85, 0.01] },
   thermostats: { pos: [-1.03, 1.47, 0.62], target: [-1.03, 1.43, 0] },
 };
 
@@ -195,7 +203,7 @@ export function createBalconyScene(container: HTMLElement, onPick: (id: string |
   const sun = new THREE.DirectionalLight('#fff4e0', 2.2);
   sun.position.set(2.5, 4.5, 4.0);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.mapSize.set(1536, 1536);
   sun.shadow.camera.left = -2.5;
   sun.shadow.camera.right = 2.5;
   sun.shadow.camera.top = 3;
@@ -320,8 +328,8 @@ export function createBalconyScene(container: HTMLElement, onPick: (id: string |
   slab.castShadow = false;
   scene.add(slab);
   // balcony door frame (context)
-  scene.add(mesh(G.box, M.dark, [1.15, 1.05, 0.005], [0.85, 2.1, 0.02]));
-  scene.add(mesh(G.box, M.glass, [1.15, 1.08, 0.02], [0.75, 1.95, 0.01]));
+  scene.add(mesh(G.box, M.dark, [1.33, 1.05, 0.005], [0.64, 2.1, 0.02]));
+  scene.add(mesh(G.box, M.glass, [1.33, 1.08, 0.02], [0.56, 1.95, 0.01]));
   // railing
   const railGroup = new THREE.Group();
   for (let x = -BAL_W / 2; x <= BAL_W / 2 + 1e-6; x += 0.4) railGroup.add(mesh(G.cylLow, M.rail, [x, 0.53, BAL_D], [0.018, 1.06, 0.018]));
@@ -518,27 +526,291 @@ export function createBalconyScene(container: HTMLElement, onPick: (id: string |
   const mainRetP = mk(G.sphere, M.particleCold, MAIN_P);
   [dropParticles, dropParticlesRet, mainSupP, mainRetP].forEach((im) => (im.castShadow = false));
 
-  // ── zone controller ──
+  // ── zone controller (openable enclosure with a detailed interior) ──
   const ctrl = new THREE.Group();
-  ctrl.add(mesh(track(new RoundedBoxGeometry(CTRL.w, CTRL.h, CTRL.d, 3, 0.01)), M.plastic, [CTRL.x, CTRL.y, CTRL.z]));
-  ctrl.add(mesh(G.box, track(new THREE.MeshStandardMaterial({ color: '#e6fcf5', roughness: 0.6 })), [CTRL.x, CTRL.y, CTRL.z + CTRL.d / 2 + 0.001], [CTRL.w - 0.03, CTRL.h - 0.05, 0.002]));
-  const zoneLeds: THREE.MeshStandardMaterial[] = [];
-  ZONE_ORDER.forEach((_, i) => {
-    const m = track(new THREE.MeshStandardMaterial({ color: '#777', emissive: '#000' }));
-    zoneLeds.push(m);
-    ctrl.add(mesh(G.sphere, m, [CTRL.x - 0.12 + i * 0.06, CTRL.y, CTRL.z + CTRL.d / 2 + 0.004], [0.008, 0.008, 0.008]));
-    ctrl.add(mesh(G.box, M.grey, [CTRL.x - 0.12 + i * 0.06, CTRL.y + 0.06, CTRL.z + CTRL.d / 2], [0.04, 0.02, 0.006]));
-    ctrl.add(mesh(G.box, M.grey, [CTRL.x - 0.12 + i * 0.06, CTRL.y - 0.06, CTRL.z + CTRL.d / 2], [0.04, 0.02, 0.006]));
-  });
-  const demandLed = track(new THREE.MeshStandardMaterial({ color: '#777', emissive: '#000' }));
-  ctrl.add(mesh(G.sphere, demandLed, [CTRL.x + 0.15, CTRL.y, CTRL.z + CTRL.d / 2 + 0.004], [0.01, 0.01, 0.01]));
+  const cx = CTRL.x;
+  const cy = CTRL.y;
+  const cTop = cy + CTRL.h / 2;
+  const cBot = cy - CTRL.h / 2;
+  const zBack = CTRL.z - CTRL.d / 2;
+  const zPcb = zBack + 0.006;
+  const zx = (i: number) => cx - 0.15 + i * 0.0275; // zone column (Z1..Z8)
+  const cr = cx + 0.13; // right column (power / fuse / relay / pump)
+  const Y_IN = cy + 0.085;
+  const Y_LED = cy + 0.04;
+  const Y_OUT = cy - 0.085;
+  // enclosure: back plate + 4 walls (open front, covered by the hinged lid)
+  const encMat = M.plastic;
+  ctrl.add(mesh(G.box, encMat, [cx, cy, zBack + 0.002], [CTRL.w, CTRL.h, 0.004]));
+  ctrl.add(mesh(G.box, encMat, [cx, cTop - 0.003, CTRL.z], [CTRL.w, 0.006, CTRL.d]));
+  ctrl.add(mesh(G.box, encMat, [cx, cBot + 0.003, CTRL.z], [CTRL.w, 0.006, CTRL.d]));
+  ctrl.add(mesh(G.box, encMat, [cx - CTRL.w / 2 + 0.003, cy, CTRL.z], [0.006, CTRL.h, CTRL.d]));
+  ctrl.add(mesh(G.box, encMat, [cx + CTRL.w / 2 - 0.003, cy, CTRL.z], [0.006, CTRL.h, CTRL.d]));
   setPick(ctrl, 'controller');
   scene.add(ctrl);
-  makeLabel('ზონის კონტროლერი', [CTRL.x, CTRL.y + 0.16, 0.08], { size: 0.04 });
-  // cables: controller → actuator bundle, controller → boiler demand
-  const cableToAct = new THREE.Mesh(track(new THREE.TubeGeometry(roundedPath([v3(CTRL.x - 0.15, CTRL.y - 0.08, 0.03), v3(0.55, CTRL.y - 0.08, 0.03), v3(0.55, 0.93, 0.03), v3(0.1, 0.93, SUP_Z - 0.02)], 0.04), 40, 0.004, 6)), M.cable);
-  const cableDemand = new THREE.Mesh(track(new THREE.TubeGeometry(roundedPath([v3(CTRL.x + 0.15, CTRL.y + 0.11, 0.03), v3(CTRL.x + 0.15, 1.33, 0.03), v3(0.3, 1.33, 0.03), v3(0.3, 1.33, 0.25), v3(0.17, 1.33, 0.3)], 0.04), 40, 0.004, 6)), M.demandCable);
-  scene.add(setPick(cableToAct, 'controller'), setPick(cableDemand, 'controller'));
+
+  // PCB with silkscreen (canvas texture)
+  const PW = CTRL.w - 0.02;
+  const PH = CTRL.h - 0.02;
+  const PPM = 4000; // canvas px per metre
+  const pcbCanvas = document.createElement('canvas');
+  pcbCanvas.width = Math.round(PW * PPM);
+  pcbCanvas.height = Math.round(PH * PPM);
+  const toPx = (x: number, y: number): [number, number] => [(x - (cx - PW / 2)) * PPM, (cy + PH / 2 - y) * PPM];
+  {
+    const g = pcbCanvas.getContext('2d')!;
+    g.fillStyle = '#0f6b4a';
+    g.fillRect(0, 0, pcbCanvas.width, pcbCanvas.height);
+    g.strokeStyle = 'rgba(255,255,255,0.18)';
+    g.lineWidth = 3;
+    for (let i = 0; i < 8; i++) {
+      const [x1, y1] = toPx(zx(i), Y_IN - 0.01);
+      const [, y2] = toPx(zx(i), Y_OUT + 0.01);
+      g.beginPath();
+      g.moveTo(x1, y1);
+      g.lineTo(x1, y2);
+      g.stroke();
+    }
+    const txt = (t: string, x: number, y: number, size = 22, color = '#f8f9fa', align: CanvasTextAlign = 'center') => {
+      const [px, py] = toPx(x, y);
+      g.font = `700 ${size}px 'Noto Sans Georgian', 'BPG Arial', system-ui, sans-serif`;
+      g.fillStyle = color;
+      g.textAlign = align;
+      g.textBaseline = 'middle';
+      g.fillText(t, px, py);
+    };
+    for (let i = 0; i < 8; i++) {
+      txt(`Z${i + 1}`, zx(i), Y_IN + 0.024, 26, i < 4 ? '#ffe066' : '#c3fae8');
+      txt('L  N  S', zx(i), Y_IN - 0.016, 15);
+      txt('A~ A~', zx(i), Y_OUT - 0.016, 15);
+      if (i < 4) txt(names[ZONE_ORDER_PCB[i]].split(' ')[0], zx(i), Y_LED - 0.016, 15, '#ffe066');
+      else txt('თავისუფ.', zx(i), Y_LED - 0.016, 14, '#96f2d7');
+    }
+    txt('შესასვლელები — თერმოსტატებიდან (L / N / სიგნალი)', cx - 0.055, Y_IN + 0.044, 18, '#ffffff');
+    txt('გამოსავლები — აქტუატორებზე (230V)', cx - 0.055, Y_OUT - 0.034, 18, '#ffffff');
+    txt('L  N  PE', cr, Y_IN - 0.016, 15);
+    txt('კვება 220V', cr, Y_IN + 0.024, 18, '#ffe066');
+    txt('ფუზი 15A', cr, cy + 0.032, 15);
+    txt('რელე', cr, cy - 0.006, 16, '#ffe066');
+    txt('NO COM NC', cr, cy - 0.046, 14);
+    txt('ქვაბის მოთხოვნა', cr, cy - 0.057, 13, '#ffd8a8');
+    txt('L1 N1 ტუმბო', cr, Y_OUT - 0.016, 14);
+    txt('DIP 0/2/5 წთ', cx + 0.075, cy - 0.016, 15, '#ffe066');
+  }
+  const pcbTex = track(new THREE.CanvasTexture(pcbCanvas));
+  pcbTex.colorSpace = THREE.SRGBColorSpace;
+  pcbTex.anisotropy = 2;
+  const pcb = mesh(G.box, track(new THREE.MeshStandardMaterial({ map: pcbTex, roughness: 0.7 })), [cx, cy, zPcb - 0.001], [PW, PH, 0.002]);
+  scene.add(setPick(pcb, 'controller'));
+
+  // terminal blocks (instanced) + screws
+  const termSpots: { x: number; y: number; id: string }[] = [];
+  for (let i = 0; i < 8; i++) {
+    const z = ZONE_ORDER_PCB[i];
+    [-0.0075, 0, 0.0075].forEach((o) => termSpots.push({ x: zx(i) + o, y: Y_IN, id: z ? `ctrl:zin:${z}` : 'ctrl:spare' }));
+    [-0.004, 0.004].forEach((o) => termSpots.push({ x: zx(i) + o, y: Y_OUT, id: z ? `ctrl:zout:${z}` : 'ctrl:spare' }));
+  }
+  [-0.0075, 0, 0.0075].forEach((o) => termSpots.push({ x: cr + o, y: Y_IN, id: 'ctrl:power' }));
+  [-0.0075, 0, 0.0075].forEach((o) => termSpots.push({ x: cr + o, y: cy - 0.03, id: 'ctrl:relay' }));
+  [-0.004, 0.004].forEach((o) => termSpots.push({ x: cr + o, y: Y_OUT, id: 'ctrl:pump' }));
+  const termMat = track(new THREE.MeshStandardMaterial({ color: '#2f9e44', roughness: 0.5 }));
+  const terms = new THREE.InstancedMesh(G.box, termMat, termSpots.length);
+  const screws = new THREE.InstancedMesh(G.cylLow, M.chrome, termSpots.length);
+  termSpots.forEach((t, i) => {
+    tmp.position.set(t.x, t.y, zPcb + 0.006);
+    tmp.scale.set(0.0068, 0.012, 0.012);
+    tmp.rotation.set(0, 0, 0);
+    tmp.updateMatrix();
+    terms.setMatrixAt(i, tmp.matrix);
+    tmp.position.set(t.x, t.y + 0.002, zPcb + 0.0125);
+    tmp.scale.set(0.0022, 0.0015, 0.0022);
+    tmp.rotation.set(Math.PI / 2, 0, 0);
+    tmp.updateMatrix();
+    screws.setMatrixAt(i, tmp.matrix);
+  });
+  terms.userData.pickInstanceIds = termSpots.map((t) => t.id);
+  scene.add(terms, screws);
+  pickables.push(terms);
+  // fuse, relay, DIP, LEDs
+  scene.add(setPick(mesh(G.cyl, track(new THREE.MeshStandardMaterial({ color: '#d0ebff', transparent: true, opacity: 0.7 })), [cr, cy + 0.045, zPcb + 0.006], [0.004, 0.022, 0.004], [0, 0, Math.PI / 2]), 'ctrl:fuse'));
+  scene.add(mesh(G.cyl, M.chrome, [cr - 0.012, cy + 0.045, zPcb + 0.006], [0.0045, 0.004, 0.0045], [0, 0, Math.PI / 2]));
+  scene.add(mesh(G.cyl, M.chrome, [cr + 0.012, cy + 0.045, zPcb + 0.006], [0.0045, 0.004, 0.0045], [0, 0, Math.PI / 2]));
+  scene.add(setPick(mesh(G.box, M.dark, [cr, cy + 0.008, zPcb + 0.009], [0.028, 0.02, 0.016]), 'ctrl:relay'));
+  const relayLed = track(new THREE.MeshStandardMaterial({ color: '#555', emissive: '#000' }));
+  scene.add(mesh(G.sphere, relayLed, [cr + 0.017, cy + 0.016, zPcb + 0.004], [0.0028, 0.0028, 0.0028]));
+  const dipGroup = new THREE.Group();
+  dipGroup.add(mesh(G.box, M.blue, [cx + 0.075, cy + 0.0, zPcb + 0.004], [0.03, 0.012, 0.007]));
+  const dipLevers: THREE.Mesh[] = [];
+  for (let k = 0; k < 4; k++) {
+    const lv = mesh(G.box, M.white, [cx + 0.064 + k * 0.0072, cy - 0.002, zPcb + 0.0085], [0.004, 0.005, 0.002]);
+    dipLevers.push(lv);
+    dipGroup.add(lv);
+  }
+  scene.add(setPick(dipGroup, 'ctrl:dip'));
+  const zoneLeds: THREE.MeshStandardMaterial[] = [];
+  for (let i = 0; i < 8; i++) {
+    const m = track(new THREE.MeshStandardMaterial({ color: '#555', emissive: '#000' }));
+    zoneLeds.push(m);
+    const led = mesh(G.sphere, m, [zx(i), Y_LED, zPcb + 0.004], [0.004, 0.004, 0.004]);
+    scene.add(i < 4 ? setPick(led, `ctrl:led:${ZONE_ORDER_PCB[i]}`) : led);
+  }
+  const demandLed = relayLed;
+  const powerLed = track(new THREE.MeshStandardMaterial({ color: '#2b8a3e', emissive: '#2b8a3e' }));
+  scene.add(mesh(G.sphere, powerLed, [cr + 0.017, Y_IN + 0.02, zPcb + 0.004], [0.0028, 0.0028, 0.0028]));
+
+  // hinged translucent cover
+  const coverPivot = new THREE.Group();
+  coverPivot.position.set(cx - CTRL.w / 2, cy, CTRL.z + CTRL.d / 2 - 0.004);
+  const coverCanvas = document.createElement('canvas');
+  coverCanvas.width = 720;
+  coverCanvas.height = 520;
+  {
+    const g = coverCanvas.getContext('2d')!;
+    g.fillStyle = 'rgba(245,247,250,0.9)';
+    g.fillRect(0, 0, 720, 520);
+    g.fillStyle = 'rgba(40,60,80,0.12)';
+    g.fillRect(40, 150, 640, 230);
+    g.fillStyle = '#1f2328';
+    g.font = "700 46px 'Noto Sans Georgian', system-ui, sans-serif";
+    g.fillText('ზონის კონტროლერი', 40, 80);
+    g.font = "600 30px 'Noto Sans Georgian', system-ui, sans-serif";
+    g.fillText('8 ზონა · 220V · 15A', 40, 125);
+    g.fillText('გასახსნელად: ღილაკი „კონტროლერის გახსნა“', 40, 450);
+  }
+  const coverTex = track(new THREE.CanvasTexture(coverCanvas));
+  coverTex.colorSpace = THREE.SRGBColorSpace;
+  const coverMat = track(new THREE.MeshStandardMaterial({ map: coverTex, transparent: true, opacity: 0.62, roughness: 0.3, depthWrite: false }));
+  const cover = new THREE.Mesh(track(new RoundedBoxGeometry(CTRL.w, CTRL.h, 0.008, 2, 0.004)), coverMat);
+  cover.position.set(CTRL.w / 2, 0, 0);
+  cover.renderOrder = 2;
+  cover.userData.pick = 'controller';
+  coverPivot.add(cover);
+  // hinge knuckles
+  [-0.08, 0.08].forEach((dy) => scene.add(mesh(G.cyl, M.grey, [cx - CTRL.w / 2, cy + dy, CTRL.z + CTRL.d / 2 - 0.004], [0.004, 0.03, 0.004])));
+  scene.add(coverPivot);
+  pickables.push(cover);
+  let coverTarget = 0;
+  makeLabel('ზონის კონტროლერი', [cx, cTop + 0.04, 0.08], { size: 0.04 });
+
+  // interior labels (only when the cover is open)
+  const insideLabels = [
+    makeLabel('თერმოსტატების კაბელები → Z1–Z4', [cx - 0.08, cTop + 0.05, 0.06], { size: 0.009, color: '#2b8a3e' }),
+    makeLabel('Z1–Z4 → აქტუატორები (230V)', [cx - 0.08, cBot - 0.045, 0.06], { size: 0.009, color: '#5f3dc4' }),
+    makeLabel('რელე COM–NO → ქვაბი (მშრალი კონტაქტი)', [cx + 0.1, cTop + 0.07, 0.06], { size: 0.009, color: '#d9480f' }),
+  ];
+  insideLabels.forEach((l) => (l.visible = false));
+
+  // ── cables ──
+  const tube = (pts: THREE.Vector3[], r: number, mat: THREE.Material, bend = 0.02) => {
+    const m = new THREE.Mesh(track(new THREE.TubeGeometry(roundedPath(pts, bend), Math.max(16, pts.length * 10), r, r < 0.002 ? 5 : 8)), mat);
+    m.castShadow = false;
+    return m;
+  };
+  const coreMat = (color: string) => track(new THREE.MeshStandardMaterial({ color, roughness: 0.5, emissive: '#000', transparent: true }));
+  const sheathMat = () => track(new THREE.MeshStandardMaterial({ color: '#6c7178', roughness: 0.6, transparent: true }));
+  const zGland = CTRL.z;
+  // cable duct along the wall (translucent so the cables inside are visible)
+  const DUCT_Y = 1.2;
+  const ductL = -1.44;
+  const ductR = cx + 0.17;
+  scene.add(setPick(mesh(G.box, track(new THREE.MeshStandardMaterial({ color: '#f8f9fa', transparent: true, opacity: 0.35, depthWrite: false })), [(ductL + ductR) / 2, DUCT_Y, 0.014], [ductR - ductL, 0.04, 0.026]), 'duct'));
+  makeLabel('საკაბელო არხი (საილუსტრაციო)', [-0.62, DUCT_Y + 0.045, 0.05], { size: 0.02 });
+
+  // thermostat 3-core cables: thermostat → duct → top gland → L / N / S terminals of its zone
+  type ZoneCable = { sheath: THREE.MeshStandardMaterial; L: THREE.MeshStandardMaterial; N: THREE.MeshStandardMaterial; S: THREE.MeshStandardMaterial };
+  const tCables = {} as Record<ZoneId, ZoneCable>;
+  ZONE_ORDER_PCB.slice(0, 4).forEach((z, i) => {
+    const mats: ZoneCable = { sheath: sheathMat(), L: coreMat('#8d5524'), N: coreMat('#1c7ed6'), S: coreMat('#2f9e44') };
+    tCables[z] = mats;
+    const tx = THERMO_X[z];
+    const lane = DUCT_Y - 0.012 + i * 0.008;
+    const gx = zx(i);
+    const g = new THREE.Group();
+    g.add(tube([v3(tx, THERMO_Y - 0.05, 0.008), v3(tx, lane, 0.008), v3(gx, lane, 0.008), v3(gx, cTop + 0.012, 0.008), v3(gx, cTop + 0.012, zGland), v3(gx, cTop - 0.004, zGland)], 0.0032, mats.sheath, 0.03));
+    // gland
+    g.add(mesh(G.cyl, M.dark, [gx, cTop + 0.004, zGland], [0.0055, 0.012, 0.0055]));
+    // cores fan out to L / N / S
+    const tY = Y_IN + 0.006;
+    [[-0.0075, mats.L, -0.0015], [0, mats.N, 0], [0.0075, mats.S, 0.0015]].forEach(([o, m, dz]) => {
+      const x = gx + (o as number);
+      g.add(tube([v3(gx + (o as number) * 0.25, cTop - 0.006, zGland + (dz as number)), v3(gx + (o as number) * 0.25, cTop - 0.02, zGland), v3(x, cTop - 0.03, zPcb + 0.016), v3(x, tY, zPcb + 0.013)], 0.0011, m as THREE.Material, 0.006));
+    });
+    scene.add(setPick(g, `tcable:${z}`));
+    makeLabel(`Z${i + 1} · L/N/სიგნ.`, [tx + 0.035, THERMO_Y - 0.165, 0.03], { size: 0.016, color: '#2b8a3e' });
+  });
+
+  // actuator cables: each actuator → down to the actuator duct → its zone's bottom gland → A~ terminals
+  const ACT_DUCT_Y = 0.665;
+  scene.add(setPick(mesh(G.box, track(new THREE.MeshStandardMaterial({ color: '#f8f9fa', transparent: true, opacity: 0.35, depthWrite: false })), [(-0.36 + cx + 0.02) / 2, ACT_DUCT_Y, 0.014], [cx + 0.02 + 0.36, 0.03, 0.026]), 'duct'));
+  const aZoneMat = {} as Record<ZoneId, { sheath: THREE.MeshStandardMaterial; L: THREE.MeshStandardMaterial; N: THREE.MeshStandardMaterial }>;
+  ZONE_ORDER_PCB.slice(0, 4).forEach((z, i) => {
+    aZoneMat[z] = { sheath: track(new THREE.MeshStandardMaterial({ color: '#dee2e6', roughness: 0.6, emissive: '#000', transparent: true })), L: coreMat('#8d5524'), N: coreMat('#1c7ed6') };
+    const gx = zx(i);
+    const g = new THREE.Group();
+    g.add(mesh(G.cyl, M.dark, [gx, cBot - 0.004, zGland], [0.0055, 0.012, 0.0055]));
+    const tY = Y_OUT - 0.006;
+    [[-0.004, aZoneMat[z].L], [0.004, aZoneMat[z].N]].forEach(([o, m]) => {
+      g.add(tube([v3(gx + (o as number) * 0.5, cBot + 0.006, zGland), v3(gx + (o as number) * 0.5, cBot + 0.02, zGland), v3(gx + (o as number), tY - 0.012, zPcb + 0.016), v3(gx + (o as number), tY, zPcb + 0.013)], 0.0011, m as THREE.Material, 0.006));
+    });
+    scene.add(setPick(g, `acable:${z}`));
+  });
+  let actCableGroup: THREE.Group | null = null;
+  let actCableKey = '';
+  const buildActuatorCables = (s: SceneSnapshot) => {
+    const key = s.loops.map((l) => l.zone ?? '-').join(',');
+    if (key === actCableKey) return;
+    actCableKey = key;
+    if (actCableGroup) {
+      scene.remove(actCableGroup);
+      actCableGroup.traverse((o) => o instanceof THREE.Mesh && o.geometry.dispose());
+      const idx = pickables.indexOf(actCableGroup);
+      if (idx >= 0) pickables.splice(idx, 1);
+    }
+    actCableGroup = new THREE.Group();
+    s.loops.forEach((l, i) => {
+      if (!l.zone) return;
+      const zi = ZONE_ORDER_PCB.indexOf(l.zone);
+      if (zi < 0 || zi > 3) return;
+      const x = PORT_X(i);
+      const lane = ACT_DUCT_Y - 0.009 + zi * 0.006;
+      const gx = zx(zi);
+      const m = new THREE.Mesh(
+        new THREE.TubeGeometry(
+          roundedPath([v3(x - 0.012, SUP_Y + BAR_R + 0.055, SUP_Z - 0.012), v3(x - 0.012, SUP_Y + BAR_R + 0.055, 0.02), v3(x - 0.012, lane, 0.02), v3(gx, lane, 0.02), v3(gx, cBot - 0.012, 0.02), v3(gx, cBot - 0.012, zGland), v3(gx, cBot - 0.004, zGland)], 0.02),
+          70,
+          0.0022,
+          6,
+        ),
+        aZoneMat[l.zone].sheath,
+      );
+      m.userData.pick = `actuator:${l.id}`;
+      actCableGroup!.add(m);
+    });
+    scene.add(actCableGroup);
+    pickables.push(actCableGroup);
+  };
+
+  // relay → boiler demand input (2 cores inside, sheathed cable outside)
+  const relayCore = coreMat('#e8711c');
+  const relayCore2 = coreMat('#e8711c');
+  const dgx = cx + 0.11;
+  const relayG = new THREE.Group();
+  relayG.add(tube([v3(cr - 0.0075, cy - 0.024, zPcb + 0.013), v3(cr - 0.0075, cy - 0.012, zPcb + 0.018), v3(dgx - 0.0012, cy + 0.06, zGland), v3(dgx - 0.0012, cTop - 0.006, zGland)], 0.0011, relayCore, 0.01));
+  relayG.add(tube([v3(cr, cy - 0.024, zPcb + 0.013), v3(cr + 0.004, cy - 0.012, zPcb + 0.02), v3(dgx + 0.0012, cy + 0.06, zGland), v3(dgx + 0.0012, cTop - 0.006, zGland)], 0.0011, relayCore2, 0.01));
+  relayG.add(mesh(G.cyl, M.dark, [dgx, cTop + 0.004, zGland], [0.0055, 0.012, 0.0055]));
+  scene.add(setPick(relayG, 'ctrl:relay'));
+  const cableDemand = tube([v3(dgx, cTop + 0.01, zGland), v3(dgx, 1.34, zGland), v3(0.3, 1.34, zGland), v3(0.3, 1.34, 0.25), v3(0.17, 1.34, 0.3)], 0.0035, M.demandCable, 0.04);
+  scene.add(setPick(cableDemand, 'ctrl:relay'));
+  // mains (context) → L / N / PE
+  const pgx = cx + 0.155;
+  const powerG = new THREE.Group();
+  [[-0.0075, '#8d5524'], [0, '#1c7ed6'], [0.0075, '#94d82d']].forEach(([o, c]) => {
+    const m = track(new THREE.MeshStandardMaterial({ color: c as string, roughness: 0.5 }));
+    powerG.add(tube([v3(pgx + (o as number) * 0.2, cTop - 0.006, zGland), v3(pgx, cTop - 0.02, zGland), v3(cr + (o as number), Y_IN + 0.025, zPcb + 0.016), v3(cr + (o as number), Y_IN + 0.006, zPcb + 0.013)], 0.0011, m, 0.006));
+  });
+  powerG.add(mesh(G.cyl, M.dark, [pgx, cTop + 0.004, zGland], [0.0055, 0.012, 0.0055]));
+  powerG.add(tube([v3(pgx, cTop + 0.01, zGland), v3(pgx, DUCT_Y + 0.004, 0.012), v3(0.42, DUCT_Y + 0.004, 0.012), v3(0.42, 1.81, 0.03)], 0.0032, M.cable, 0.03));
+  scene.add(setPick(powerG, 'ctx:mains'));
 
   // ── thermostats (shown together for illustration) ──
   const thermoGeo = track(new RoundedBoxGeometry(0.1, 0.1, 0.022, 3, 0.012));
@@ -640,9 +912,13 @@ export function createBalconyScene(container: HTMLElement, onPick: (id: string |
     line.renderOrder = 9;
     explain.add(line);
   };
-  ZONE_ORDER.forEach((z, i) => dashed([v3(THERMO_X[z], THERMO_Y - 0.06, 0.03), v3(THERMO_X[z], 1.12, 0.03), v3(CTRL.x - 0.12 + i * 0.06, 1.12, 0.04), v3(CTRL.x - 0.12 + i * 0.06, CTRL.y + 0.08, 0.07)], '#2f9e44'));
-  dashed([v3(CTRL.x - 0.15, CTRL.y - 0.08, 0.07), v3(0, 0.93, SUP_Z)], '#2f9e44');
-  dashed([v3(CTRL.x + 0.15, CTRL.y, 0.07), v3(0.17, 1.34, 0.31)], '#e8711c');
+  ZONE_ORDER.forEach((z) => {
+    const g = PORT_POS[`controller.in.${z}`];
+    dashed([v3(THERMO_X[z], THERMO_Y - 0.06, 0.04), v3(THERMO_X[z], 1.2, 0.04), v3(g[0], 1.2, 0.04), v3(g[0], g[1], 0.04)], '#2f9e44');
+    const o = PORT_POS[`controller.out.${z}`];
+    dashed([v3(o[0], o[1], 0.04), v3(o[0], 0.665, 0.04), v3(-0.3, 0.665, 0.04), v3(-0.3, 0.86, SUP_Z)], '#7048e8');
+  });
+  dashed([v3(...PORT_POS['controller.demand']), v3(PORT_POS['controller.demand'][0], 1.34, 0.04), v3(0.17, 1.34, 0.31)], '#e8711c');
   scene.add(explain);
   const explainLabels = [
     makeLabel('① მიწოდება (ცხელი): ქვაბი → კოლექტორი → კონტურები', [-0.75, 1.05, 0.25], { size: 0.032, color: '#c92a2a' }),
@@ -782,13 +1058,40 @@ export function createBalconyScene(container: HTMLElement, onPick: (id: string |
 
   function applyIndicators(s: SceneSnapshot) {
     flame.visible = s.burnerOn; // flame only while the simulated burner is on
-    ZONE_ORDER.forEach((z, i) => {
-      const on = s.zoneOut[z];
-      zoneLeds[i].emissive.set(on ? '#f59f00' : '#000');
-      zoneLeds[i].color.set(on ? '#f59f00' : '#777');
+    const cm0 = s.connectMode;
+    ZONE_ORDER_PCB.forEach((z, i) => {
+      const out = s.zoneOut[z] && (!cm0 || s.summary.power[z]);
+      zoneLeds[i].emissive.set(s.zoneOut[z] ? '#f59f00' : '#000');
+      zoneLeds[i].color.set(s.zoneOut[z] ? '#f59f00' : '#555');
+      // thermostat cable: signal core glows while the room calls and the link exists
+      const sigLink = !cm0 || s.summary.signal[z];
+      const t = s.thermostats[z];
+      const tc = tCables[z];
+      tc.S.emissive.set(t.enabled && t.calling && sigLink ? '#40c057' : '#000');
+      tc.L.emissive.set(t.enabled && sigLink ? '#3b1f0a' : '#000');
+      [tc.sheath, tc.L, tc.N, tc.S].forEach((m) => {
+        m.opacity = sigLink ? 1 : 0.15;
+        m.depthWrite = sigLink;
+      });
+      // actuator cables: glow while the zone output is energised
+      const ac = aZoneMat[z];
+      const pLink = !cm0 || s.summary.power[z];
+      ac.sheath.emissive.set(out ? '#4d3d00' : '#000');
+      ac.L.emissive.set(out ? '#4a2400' : '#000');
+      ac.N.emissive.set(out ? '#08325e' : '#000');
+      [ac.sheath, ac.L, ac.N].forEach((m) => {
+        m.opacity = pLink ? 1 : 0.15;
+        m.depthWrite = pLink;
+      });
     });
     demandLed.emissive.set(s.ta1 ? '#ff7a1a' : '#000');
-    demandLed.color.set(s.ta1 ? '#ff7a1a' : '#777');
+    demandLed.color.set(s.ta1 ? '#ff7a1a' : '#555');
+    relayCore.emissive.set(s.ta1 ? '#ff7a1a' : '#000');
+    relayCore2.emissive.set(s.ta1 ? '#ff7a1a' : '#000');
+    M.demandCable.emissive.set(s.ta1 ? '#7a3000' : '#000');
+    // DIP levers: 0 min → none, 2 min → lever 1, 5 min → lever 2 (illustrative mapping)
+    dipLevers.forEach((lv, k) => (lv.position.y = cy - 0.002 + ((s.relayDelayS === 120 && k === 0) || (s.relayDelayS === 300 && k === 1) ? 0.003 : 0)));
+    buildActuatorCables(s);
     // connect mode: ghost missing physical links
     const ghost = (m: THREE.MeshStandardMaterial, on: boolean) => {
       m.opacity = on ? 1 : 0.22;
@@ -797,7 +1100,6 @@ export function createBalconyScene(container: HTMLElement, onPick: (id: string |
     const cm = s.connectMode;
     ghost(M.supply, !cm || s.summary.supply);
     ghost(M.ret, !cm || s.summary.ret);
-    ghost(M.cable, !cm || ZONE_ORDER.every((z) => s.summary.power[z]));
     ghost(M.demandCable, !cm || s.summary.demandLink);
     portGroup.visible = cm;
     Object.entries(portMeshes).forEach(([id, m]) => m.scale.setScalar(s.pendingPort === id ? 0.024 : 0.014));
@@ -837,6 +1139,10 @@ export function createBalconyScene(container: HTMLElement, onPick: (id: string |
     const hits = raycaster.intersectObjects(objs, true);
     for (const h of hits) {
       const o = h.object;
+      if (o.userData.pickInstanceIds && h.instanceId !== undefined) {
+        onPick(o.userData.pickInstanceIds[h.instanceId] as string);
+        return;
+      }
       if (o.userData.pickInstance === 'actuator' && h.instanceId !== undefined && snap) {
         onPick('actuator:' + snap.loops[h.instanceId].id);
         return;
@@ -852,6 +1158,20 @@ export function createBalconyScene(container: HTMLElement, onPick: (id: string |
   };
   renderer.domElement.addEventListener('pointerdown', onDown);
   renderer.domElement.addEventListener('pointerup', onUp);
+
+  // ── shadow budget: only larger objects cast shadows (small parts, wires, terminals do not) ──
+  const sphere = new THREE.Sphere();
+  const wscale = new THREE.Vector3();
+  scene.updateMatrixWorld(true);
+  scene.traverse((o) => {
+    if (!(o instanceof THREE.Mesh) || o instanceof THREE.InstancedMesh || !o.castShadow) return;
+    const geo = o.geometry as THREE.BufferGeometry;
+    if (!geo.boundingSphere) geo.computeBoundingSphere();
+    sphere.copy(geo.boundingSphere!);
+    o.getWorldScale(wscale);
+    if (sphere.radius * Math.max(wscale.x, wscale.y, wscale.z) < 0.05) o.castShadow = false;
+  });
+  [valveBodies, actRings, actCaps, actPins, actDots, fmTubes, fmFloats, fmCaps, blueCaps, tags, retElbows, halos, terms, screws].forEach((im) => (im.castShadow = false));
 
   // ── resize ──
   const resize = () => {
@@ -886,6 +1206,7 @@ export function createBalconyScene(container: HTMLElement, onPick: (id: string |
       if (camAnim.t >= 1) camAnim = null;
     }
     controls.update();
+    coverPivot.rotation.y += (coverTarget - coverPivot.rotation.y) * Math.min(1, dt * 6);
     for (const [id, t0] of Object.entries(pressAt)) {
       const b = buttons[id];
       const pressed = now - t0 < 160;
@@ -990,6 +1311,10 @@ export function createBalconyScene(container: HTMLElement, onPick: (id: string |
       const p = b.getWorldPosition(new THREE.Vector3()).project(camera);
       const r = renderer.domElement.getBoundingClientRect();
       return { x: ((p.x + 1) / 2) * r.width, y: ((1 - p.y) / 2) * r.height };
+    },
+    setControllerOpen(open) {
+      coverTarget = open ? -1.9 : 0;
+      insideLabels.forEach((l) => (l.visible = open));
     },
     setExplain(on) {
       explainOn = on;

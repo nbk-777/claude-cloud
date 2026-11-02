@@ -23,7 +23,7 @@ interface Props {
 
 const MODE_LABEL: Record<string, string> = { standby: 'მოლოდინი', heating: 'გათბობა', dhw: 'ცხელი წყალი', overrun: 'ტუმბოს დაყოვნება', fault: 'ხარვეზი 116' };
 const STATUS_LABEL: Record<string, string> = { calling: 'ითხოვს სითბოს', satisfied: 'მიზანს მიაღწია', off: 'გამორთული', sensor_lost: 'სენსორი დაკარგულია', idle: 'მოლოდინი' };
-const ZONE_VIEW_ORDER: ZoneId[] = ['living', 'bath', 'child', 'main'];
+const ZONE_VIEW_ORDER: ZoneId[] = ['living', 'child', 'main', 'bath']; // = controller zones Z1..Z4
 const CAMS: [CameraPreset, string][] = [
   ['full', 'მთელი აივანი'],
   ['boiler', 'ქვაბი'],
@@ -53,6 +53,13 @@ export function Balcony3DPage({ cfg, state, paused, setThermostat, setChSetpoint
   const [toPort, setToPort] = useState('');
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [toast, setToast] = useState('');
+  const [ctrlOpen, setCtrlOpen] = useState(false);
+  const toggleController = (open: boolean) => {
+    setCtrlOpen(open);
+    apiRef.current?.setControllerOpen(open);
+    apiRef.current?.setCamera(open ? 'controllerInside' : 'controller');
+    if (open) setSelected('controller');
+  };
   const summary = useMemo(() => summarize(connections), [connections]);
   const [chMin, chMax] = chLimits(cfg);
 
@@ -174,6 +181,7 @@ export function Balcony3DPage({ cfg, state, paused, setThermostat, setChSetpoint
     paused,
     speed: cfg.sim.speed,
     chSetpoint: cfg.sim.chSetpointC,
+    relayDelayS: cfg.sim.relayDelayS,
     connectMode,
     summary,
     connections,
@@ -218,6 +226,9 @@ export function Balcony3DPage({ cfg, state, paused, setThermostat, setChSetpoint
             <button onClick={() => cam('full')} data-testid="cam-reset">
               ⟲ კამერის აღდგენა
             </button>
+            <button className={ctrlOpen ? 'primary' : ''} onClick={() => toggleController(!ctrlOpen)} data-testid="ctrl-open" aria-pressed={ctrlOpen}>
+              {ctrlOpen ? '▣ კონტროლერის დახურვა' : '▢ კონტროლერის გახსნა'}
+            </button>
             <label className="check">
               <input type="checkbox" id="b3d-explain" checked={explain} onChange={(e) => setExplain(e.target.checked)} data-testid="explain-toggle" />
               სისტემის ახსნა
@@ -248,6 +259,15 @@ export function Balcony3DPage({ cfg, state, paused, setThermostat, setChSetpoint
             {toast && (
               <div className="b3d-toast" data-testid="b3d-toast" role="status">
                 {toast}
+              </div>
+            )}
+            {ctrlOpen && status === 'ready' && (
+              <div className="b3d-legend b3d-legend-top" data-testid="ctrl-legend">
+                <span><i style={{ background: '#8d5524' }} /> L (ყავისფერი)</span>
+                <span><i style={{ background: '#1c7ed6' }} /> N (ლურჯი)</span>
+                <span><i style={{ background: '#2f9e44' }} /> სიგნალი (მწვანე)</span>
+                <span><i style={{ background: '#e8711c' }} /> რელე → ქვაბი</span>
+                <span>ნათება = ძაბვა / სიგნალი არის</span>
               </div>
             )}
             {explain && status === 'ready' && (
@@ -314,7 +334,7 @@ export function Balcony3DPage({ cfg, state, paused, setThermostat, setChSetpoint
             </p>
           </section>
 
-          <Inspector id={selected} cfg={cfg} state={state} connectMode={connectMode} summary={summary} onClose={() => setSelected(null)} />
+          <Inspector id={selected} cfg={cfg} state={state} connectMode={connectMode} summary={summary} onClose={() => setSelected(null)} ctrlOpen={ctrlOpen} toggleController={toggleController} />
 
           {connectMode && (
             <section className="panel b3d-connect" data-testid="connect-panel">
@@ -402,7 +422,25 @@ export function Balcony3DPage({ cfg, state, paused, setThermostat, setChSetpoint
   );
 }
 
-function Inspector({ id, cfg, state, connectMode, summary, onClose }: { id: string | null; cfg: AppConfig; state: SimState; connectMode: boolean; summary: ReturnType<typeof summarize>; onClose: () => void }) {
+function Inspector({
+  id,
+  cfg,
+  state,
+  connectMode,
+  summary,
+  onClose,
+  ctrlOpen,
+  toggleController,
+}: {
+  id: string | null;
+  cfg: AppConfig;
+  state: SimState;
+  connectMode: boolean;
+  summary: ReturnType<typeof summarize>;
+  onClose: () => void;
+  ctrlOpen: boolean;
+  toggleController: (open: boolean) => void;
+}) {
   const b = state.boiler;
   let name = '';
   let func = '';
@@ -437,6 +475,59 @@ function Inspector({ id, cfg, state, connectMode, summary, onClose }: { id: stri
     name = 'ზონის კონტროლერი (გაყვანილობის ცენტრი)';
     func = 'იღებს თერმოსტატების სიგნალს, აძლევს ძაბვას თითოეული ზონის აქტუატორებს და დაყოვნების შემდეგ კეტავს ქვაბის მოთხოვნის კონტაქტს.';
     st = ZONES.map((z, i) => `Z${i + 1} ${cfg.roomNames[z]}: ${state.controller.zoneOut[z] ? 'ჩართ.' : 'გამორთ.'}`).join(' · ') + ` · ქვაბის მოთხოვნა ${state.controller.ta1Closed ? 'ჩართ.' : 'გამორთ.'} · დაყოვნება ${cfg.sim.relayDelayS / 60} წთ`;
+  } else if (id.startsWith('ctrl:') || id.startsWith('tcable:') || id.startsWith('acable:') || id === 'duct') {
+    const zoneNo = (z: ZoneId) => ['living', 'child', 'main', 'bath'].indexOf(z) + 1;
+    const [kind, sub] = [id.split(':')[0] + ':' + (id.split(':')[1] ?? ''), id.split(':')[2] as ZoneId | undefined];
+    const z = (sub ?? (id.split(':')[1] as ZoneId)) as ZoneId;
+    if (kind === 'ctrl:zin') {
+      name = `ზონა Z${zoneNo(z)} — შესასვლელი კლემები (L / N / სიგნალი)`;
+      func = `აქ შედის ${cfg.roomNames[z]}-ის თერმოსტატის 3-ძარღვიანი კაბელი: ყავისფერი L და ლურჯი N კვებავს თერმოსტატს, მწვანე „სიგნალი“ მოდის თერმოსტატიდან, როცა ოთახი სითბოს ითხოვს (ზოგადი მოდელი — კლემების წარწერები მოდელზეა დამოკიდებული).`;
+      st = `სიგნალი ${state.rooms[z].calling && cfg.thermostats[z].enabled ? 'არის (ითხოვს სითბოს)' : 'არ არის'}${connectMode ? ` · კავშირი ${summary.signal[z] ? 'შეერთებულია' : 'გათიშულია'}` : ''}`;
+    } else if (kind === 'ctrl:zout') {
+      name = `ზონა Z${zoneNo(z)} — აქტუატორების გამოსავალი (A~ L / A~ N)`;
+      func = 'ზონის ჩართვისას აქ 230V ჩნდება და პარალელურად კვებავს ამ ზონის ყველა აქტუატორს.';
+      st = `${state.controller.zoneOut[z] ? 'ძაბვა არის (ზონა ჩართულია)' : 'ძაბვა არ არის'} · აქტუატორები: ${loopsOfZone(cfg, z).join(', ')}`;
+    } else if (kind === 'ctrl:led') {
+      name = `ზონა Z${zoneNo(z)} — სტატუსის LED`;
+      func = 'ანთია, როცა ზონის გამოსავალი ჩართულია.';
+      st = state.controller.zoneOut[z] ? 'ანთია' : 'ჩამქრალია';
+    } else if (id === 'ctrl:relay') {
+      name = 'ქვაბის რელე (NO / COM / NC)';
+      func = 'რომელიმე ზონის მოთხოვნისას, DIP დაყოვნების შემდეგ, COM–NO იკეტება — ეს მშრალი კონტაქტი ორი ნარინჯისფერი სადენით მიდის ქვაბის მოთხოვნის კლემაზე. NC არ გამოიყენება. ქვაბის კლემაზე 230V არასოდეს.';
+      st = state.controller.ta1Closed ? 'COM–NO დაკეტილია → ქვაბი ითხოვს გათბობას' : 'ღიაა → მოთხოვნა არ არის';
+    } else if (id === 'ctrl:dip') {
+      name = 'DIP გადამრთველები — რელეს დაყოვნება';
+      func = 'აყოვნებს ქვაბის ჩართვას, რომ აქტუატორებმა მოასწრონ გახსნა (0 / 2 / 5 წთ; ბერკეტების რუკა საილუსტრაციოა).';
+      st = `${cfg.sim.relayDelayS / 60} წთ`;
+    } else if (id === 'ctrl:fuse') {
+      name = 'ფუზი 15A';
+      func = 'იცავს კონტროლერს და მის გამოსავლებს (მომხმარებლის აღწერით).';
+      st = 'მთელია (სიმულაციაში არ იწვება)';
+    } else if (id === 'ctrl:power') {
+      name = 'კვების კლემები L / N / PE (220V)';
+      func = 'კონტროლერის ქსელის კვება — მხოლოდ კონტექსტი. საჭიროა პროფესიონალური (ელექტრიკოსის) მონტაჟი.';
+      st = 'კვება არის (სიმულაცია)';
+    } else if (id === 'ctrl:pump') {
+      name = 'ტუმბოს გამოსავალი L1 / N1';
+      func = 'გარე ტუმბოსთვის. აქ არ გამოიყენება — ქვაბს საკუთარი ტუმბო აქვს.';
+      st = cfg.sim.pumpOutputEnabled ? 'ჩართულია პარამეტრებში' : 'არ გამოიყენება';
+    } else if (id === 'ctrl:spare') {
+      name = 'თავისუფალი ზონა (Z5–Z8)';
+      func = 'ამ ბინაში 8-დან მხოლოდ 4 ზონა გამოიყენება.';
+      st = '—';
+    } else if (kind.startsWith('tcable')) {
+      name = `${cfg.roomNames[z]}-ის თერმოსტატის კაბელი (3 ძარღვი) → Z${zoneNo(z)}`;
+      func = 'თერმოსტატიდან საკაბელო არხით მიდის კონტროლერის ზედა სალნიკამდე, შიგნით ძარღვები უერთდება Z-ის L / N / სიგნალის კლემებს. ძარღვების რეალური ფუნქცია გადასამოწმებელია.';
+      st = `სიგნალი ${state.rooms[z].calling && cfg.thermostats[z].enabled ? 'გადის (მწვანე ნათება)' : 'არ გადის'}${connectMode ? ` · ${summary.signal[z] ? 'შეერთებულია' : 'გათიშულია — მოთხოვნა ვერ გადის'}` : ''}`;
+    } else if (kind.startsWith('acable')) {
+      name = `Z${zoneNo(z)} აქტუატორების კაბელები (${cfg.roomNames[z]})`;
+      func = 'კონტროლერის ქვედა სალნიკიდან არხით მიდის ამ ზონის თითოეულ აქტუატორამდე (პარალელურად).';
+      st = `${state.controller.zoneOut[z] ? 'ძაბვა არის' : 'ძაბვა არ არის'}${connectMode ? ` · ${summary.power[z] ? 'შეერთებულია' : 'გათიშულია — აქტუატორები დახურული რჩება'}` : ''}`;
+    } else {
+      name = 'საკაბელო არხი';
+      func = 'კაბელების გასატარებელი არხი კედელზე (საილუსტრაციო; გამჭვირვალედ ნაჩვენები).';
+      st = '—';
+    }
   } else if (id.startsWith('thermostat:')) {
     const z = id.slice(11) as ZoneId;
     name = `ოთახის თერმოსტატი — ${cfg.roomNames[z]}`;
@@ -465,6 +556,11 @@ function Inspector({ id, cfg, state, connectMode, summary, onClose }: { id: stri
       <p className="small" data-testid="b3d-insp-state">
         <b>სიმულირებული მდგომარეობა:</b> {st}
       </p>
+      {(id === 'controller' || id.startsWith('ctrl:')) && (
+        <button className="primary" onClick={() => toggleController(!ctrlOpen)} data-testid="insp-ctrl-open">
+          {ctrlOpen ? 'კონტროლერის დახურვა' : 'კონტროლერის გახსნა — შიგნით ნახვა'}
+        </button>
+      )}
     </section>
   );
 }
