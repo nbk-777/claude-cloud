@@ -1,6 +1,6 @@
 # 3D Balcony Installation page
 
-**Route:** tab **"3D Balcony Installation"**, or open the app with `#balcony-3d`, for example
+**Route:** tab **"3D აივნის ინსტალაცია"** (3D Balcony Installation), or open the app with `#balcony-3d`, for example
 `dist/index.html#balcony-3d` or `https://nbk-777.github.io/claude-cloud/#balcony-3d`.
 
 The page is an interactive WebGL scene: Three.js 0.186.1 with OrbitControls and RoundedBoxGeometry from the Three.js examples.
@@ -36,7 +36,9 @@ The scene renders the **existing** simulation state and never runs its own simul
 The setpoint and on/off buttons on this page call the same config update as every other page.
 
 ## Interaction
-- **Navigation:** orbit, zoom and pan (OrbitControls). Camera presets: Full balcony, Boiler, Manifold, Controller, plus **Reset camera**.
+All labels and descriptions on this page, in the panels and inside the 3D scene, are in Georgian.
+- **Functional 3D buttons:** each thermostat in the scene has ⏻ / − / + buttons, and the boiler panel has − / + for the flow setpoint. They call the same controls as the side panel, give press feedback and show a short message. On a phone, tapping a thermostat zooms the camera to it so the buttons are big enough to press; each button also has a larger invisible tap area.
+- **Navigation:** orbit, zoom and pan (OrbitControls). Camera presets: full balcony, boiler, manifold, controller and thermostats (fitted to the screen width), plus reset.
 - **Inspecting:** click the boiler, manifold, pipes, any actuator, the controller, a thermostat or a context item. The inspector shows its function and current simulated state, and the selected object gets a highlight box.
 - **Thermostat selection:** selecting a thermostat highlights the actuators and loops of its zone, including hall and wardrobe loops if they follow that zone.
 - **Explain system:** an overlay showing the supply path (red), return path (blue), control signals (green, dashed) and boiler demand (orange, dashed).
@@ -91,4 +93,4 @@ These numbers are chosen to read well on screen. They are not manufacturer dimen
 ## Verification
 - `npm test`: 73 tests, including 13 for the connection and state logic.
 - `npm run typecheck`, `npm run build`.
-- `npm run smoke:3d`: headless Chromium with SwiftShader WebGL. It opens `#balcony-3d`, checks the canvas, setpoint buttons, active heating, thermostat-to-loops selection, connect mode (reset blocks the boiler request; incompatible ports rejected; compatible ports connect; the assembled example restores heating), and that the scene returns to standby when demand stops. It also checks for no console errors or warnings and saves screenshots to `e2e/screenshots/b3d-*.png`.
+- `npm run smoke:3d`: headless Chromium, 21 checks, including real clicks and a phone touch tap on the 3D buttons with SwiftShader WebGL. It opens `#balcony-3d`, checks the canvas, setpoint buttons, active heating, thermostat-to-loops selection, connect mode (reset blocks the boiler request; incompatible ports rejected; compatible ports connect; the assembled example restores heating), and that the scene returns to standby when demand stops. It also checks for no console errors or warnings and saves screenshots to `e2e/screenshots/b3d-*.png`.

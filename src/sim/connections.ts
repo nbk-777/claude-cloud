@@ -25,20 +25,20 @@ export interface Connection {
   type: LinkType;
 }
 
-const Z_LABEL: Record<ZoneId, string> = { living: 'Living Room', bath: 'Bathroom', child: "Child's Bedroom", main: 'Main Bedroom' };
+const Z_LABEL: Record<ZoneId, string> = { living: 'მისაღები', bath: 'სააბაზანო', child: 'საბავშვო საძინებელი', main: 'მთავარი საძინებელი' };
 export const ZONE_LABEL = Z_LABEL;
 
 export const PORTS: Port[] = [
-  { id: 'boiler.supply', label: 'Boiler — heating supply (out)', kind: 'water-out', line: 'supply' },
-  { id: 'boiler.return', label: 'Boiler — heating return (in)', kind: 'water-in', line: 'return' },
-  { id: 'manifold.supply', label: 'Manifold — supply bar (in)', kind: 'water-in', line: 'supply' },
-  { id: 'manifold.return', label: 'Manifold — return bar (out)', kind: 'water-out', line: 'return' },
-  ...ZONES.map((z): Port => ({ id: `thermostat.${z}`, label: `Thermostat — ${Z_LABEL[z]} (signal out)`, kind: 'signal-out', zone: z })),
-  ...ZONES.map((z, i): Port => ({ id: `controller.in.${z}`, label: `Controller — zone ${i + 1} input (${Z_LABEL[z]})`, kind: 'signal-in', zone: z })),
-  ...ZONES.map((z, i): Port => ({ id: `controller.out.${z}`, label: `Controller — zone ${i + 1} actuator output`, kind: 'power-out', zone: z })),
-  ...ZONES.map((z): Port => ({ id: `actuators.${z}`, label: `Actuator group — ${Z_LABEL[z]}`, kind: 'power-in', zone: z })),
-  { id: 'controller.demand', label: 'Controller — boiler demand output', kind: 'demand-out' },
-  { id: 'boiler.demand', label: 'Boiler — demand input (room-thermostat input)', kind: 'demand-in' },
+  { id: 'boiler.supply', label: 'ქვაბი — გათბობის მიწოდება (გამოსავალი)', kind: 'water-out', line: 'supply' },
+  { id: 'boiler.return', label: 'ქვაბი — გათბობის დაბრუნება (შესასვლელი)', kind: 'water-in', line: 'return' },
+  { id: 'manifold.supply', label: 'კოლექტორი — მიწოდების ბარი (შესასვლელი)', kind: 'water-in', line: 'supply' },
+  { id: 'manifold.return', label: 'კოლექტორი — დაბრუნების ბარი (გამოსავალი)', kind: 'water-out', line: 'return' },
+  ...ZONES.map((z): Port => ({ id: `thermostat.${z}`, label: `თერმოსტატი — ${Z_LABEL[z]} (სიგნალი)`, kind: 'signal-out', zone: z })),
+  ...ZONES.map((z, i): Port => ({ id: `controller.in.${z}`, label: `კონტროლერი — ზონა ${i + 1} შესასვლელი (${Z_LABEL[z]})`, kind: 'signal-in', zone: z })),
+  ...ZONES.map((z, i): Port => ({ id: `controller.out.${z}`, label: `კონტროლერი — ზონა ${i + 1} აქტუატორების გამოსავალი`, kind: 'power-out', zone: z })),
+  ...ZONES.map((z): Port => ({ id: `actuators.${z}`, label: `აქტუატორების ჯგუფი — ${Z_LABEL[z]}`, kind: 'power-in', zone: z })),
+  { id: 'controller.demand', label: 'კონტროლერი — ქვაბის მოთხოვნის გამოსავალი', kind: 'demand-out' },
+  { id: 'boiler.demand', label: 'ქვაბი — მოთხოვნის შესასვლელი (ოთახის თერმოსტატის კლემა)', kind: 'demand-in' },
 ];
 
 /** Context-only infrastructure. Shown in the scene, never connectable. */
@@ -67,11 +67,11 @@ export interface ValidationResult {
  */
 export function validateConnection(a: string, b: string, existing: Connection[]): ValidationResult {
   if ((CONTEXT_ONLY as readonly string[]).some((c) => a.startsWith(c) || b.startsWith(c)))
-    return { ok: false, reason: 'Gas, flue, pressure-relief and mains wiring are context only — professional installation required.' };
+    return { ok: false, reason: 'გაზი, საკვამური, დამცავი სარქვლის გამონადენი და ქსელის კვება მხოლოდ კონტექსტია — საჭიროა პროფესიონალური მონტაჟი.' };
   const pa = portById(a);
   const pb = portById(b);
-  if (!pa || !pb) return { ok: false, reason: 'Unknown port.' };
-  if (a === b) return { ok: false, reason: 'A port cannot be connected to itself.' };
+  if (!pa || !pb) return { ok: false, reason: 'უცნობი პორტი.' };
+  if (a === b) return { ok: false, reason: 'პორტი საკუთარ თავს ვერ შეუერთდება.' };
   // orient: from = output side
   let from = pa;
   let to = pb;
@@ -80,13 +80,13 @@ export function validateConnection(a: string, b: string, existing: Connection[])
     to = pa;
   }
   const rule = PAIRS[from.kind];
-  if (!rule || rule.to !== to.kind) return { ok: false, reason: `Incompatible ports: ${pa.label} ↔ ${pb.label}.` };
+  if (!rule || rule.to !== to.kind) return { ok: false, reason: `შეუთავსებელი პორტები: ${pa.label} ↔ ${pb.label}.` };
   if (rule.type === 'water-supply' && from.line !== to.line)
-    return { ok: false, reason: 'Incompatible ports: supply and return lines cannot be joined.' };
+    return { ok: false, reason: 'შეუთავსებელი პორტები: მიწოდება და დაბრუნება ერთმანეთს ვერ შეუერთდება.' };
   if (from.zone && to.zone && from.zone !== to.zone)
-    return { ok: false, reason: `Wrong zone: ${from.label} belongs to ${Z_LABEL[from.zone]}, not ${Z_LABEL[to.zone]}.` };
+    return { ok: false, reason: `არასწორი ზონა: „${from.label}“ ეკუთვნის ზონას „${Z_LABEL[from.zone]}“, არა „${Z_LABEL[to.zone]}“.` };
   if (existing.some((c) => c.from === from.id || c.to === from.id || c.from === to.id || c.to === to.id))
-    return { ok: false, reason: 'One of these ports is already connected. Remove the existing link first.' };
+    return { ok: false, reason: 'ერთ-ერთი პორტი უკვე შეერთებულია — ჯერ წაშალეთ არსებული კავშირი.' };
   const type: LinkType = rule.type === 'water-supply' && from.line === 'return' ? 'water-return' : rule.type;
   return { ok: true, connection: { from: from.id, to: to.id, type } };
 }

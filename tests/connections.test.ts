@@ -38,7 +38,7 @@ describe('connection validation', () => {
   it('rejects wrong zone', () => {
     const r = validateConnection('thermostat.living', 'controller.in.bath', []);
     expect(r.ok).toBe(false);
-    expect(r.reason).toMatch(/Wrong zone/);
+    expect(r.reason).toMatch(/არასწორი ზონა/);
   });
   it('rejects re-using a port', () => {
     const c: Connection[] = connect('boiler.supply', 'manifold.supply', []).connections;
@@ -48,7 +48,7 @@ describe('connection validation', () => {
     for (const p of ['gas', 'flue', 'pressure-relief', 'mains-power']) {
       const r = validateConnection(p, 'boiler.supply', []);
       expect(r.ok).toBe(false);
-      expect(r.reason).toMatch(/professional installation required/i);
+      expect(r.reason).toMatch(/პროფესიონალური მონტაჟი/);
     }
   });
   it('assembled example is complete; reset and disconnect work', () => {

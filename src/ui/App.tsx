@@ -175,6 +175,7 @@ export function App({ initial }: { initial?: AppConfig }) {
               state={state}
               paused={sim.paused}
               setThermostat={setThermostat}
+              setChSetpoint={(v) => setSim({ chSetpointC: v })}
               connections={connections}
               setConnections={setConnections}
               connectMode={connectMode}

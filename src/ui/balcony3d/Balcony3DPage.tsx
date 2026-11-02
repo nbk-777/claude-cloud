@@ -1,9 +1,9 @@
-// "3D Balcony Installation" page. Renders the existing simulation state in a procedural
-// Three.js scene; never runs a separate simulation.
+// "3D აივნის ინსტალაცია" page. Renders the existing simulation state in a procedural
+// Three.js scene; never runs a separate simulation. UI text is Georgian.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { LOOP_IDS, ZONES, controlZoneOf, type AppConfig, type ZoneId } from '../../model/types';
-import { loopsOfZone, thermostatStatus, type SimState } from '../../sim/engine';
+import { chLimits, loopsOfZone, thermostatStatus, type SimState } from '../../sim/engine';
 import { DEMO } from '../../sim/params';
 import { PORTS, ZONE_LABEL, assembledExample, connect, disconnect, portById, summarize, type Connection } from '../../sim/connections';
 import { ROOM_COLOR, fmt } from '../util';
@@ -14,14 +14,23 @@ interface Props {
   state: SimState;
   paused: boolean;
   setThermostat: (z: ZoneId, patch: Partial<{ enabled: boolean; setpointC: number }>) => void;
+  setChSetpoint: (v: number) => void;
   connections: Connection[];
   setConnections: (c: Connection[]) => void;
   connectMode: boolean;
   setConnectMode: (on: boolean) => void;
 }
 
-const MODE_LABEL: Record<string, string> = { standby: 'STANDBY', heating: 'HEATING', dhw: 'HOT WATER', overrun: 'PUMP OVERRUN', fault: 'FAULT 116' };
+const MODE_LABEL: Record<string, string> = { standby: 'მოლოდინი', heating: 'გათბობა', dhw: 'ცხელი წყალი', overrun: 'ტუმბოს დაყოვნება', fault: 'ხარვეზი 116' };
+const STATUS_LABEL: Record<string, string> = { calling: 'ითხოვს სითბოს', satisfied: 'მიზანს მიაღწია', off: 'გამორთული', sensor_lost: 'სენსორი დაკარგულია', idle: 'მოლოდინი' };
 const ZONE_VIEW_ORDER: ZoneId[] = ['living', 'bath', 'child', 'main'];
+const CAMS: [CameraPreset, string][] = [
+  ['full', 'მთელი აივანი'],
+  ['boiler', 'ქვაბი'],
+  ['manifold', 'კოლექტორი'],
+  ['controller', 'კონტროლერი'],
+  ['thermostats', 'თერმოსტატები'],
+];
 
 export function hasWebGL(): boolean {
   try {
@@ -32,7 +41,7 @@ export function hasWebGL(): boolean {
   }
 }
 
-export function Balcony3DPage({ cfg, state, paused, setThermostat, connections, setConnections, connectMode, setConnectMode }: Props) {
+export function Balcony3DPage({ cfg, state, paused, setThermostat, setChSetpoint, connections, setConnections, connectMode, setConnectMode }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const apiRef = useRef<SceneApi | null>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'nowebgl' | 'error'>('loading');
@@ -43,36 +52,67 @@ export function Balcony3DPage({ cfg, state, paused, setThermostat, connections, 
   const [fromPort, setFromPort] = useState('');
   const [toPort, setToPort] = useState('');
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [toast, setToast] = useState('');
   const summary = useMemo(() => summarize(connections), [connections]);
+  const [chMin, chMax] = chLimits(cfg);
 
-  // latest values for the pick callback (scene is created once)
-  const live = useRef({ connectMode, pending, connections });
-  live.current = { connectMode, pending, connections };
+  // latest values for the scene's pick callback (the scene is created once)
+  const live = useRef({ connectMode, pending, connections, cfg });
+  live.current = { connectMode, pending, connections, cfg };
 
   const tryConnect = (a: string, b: string) => {
     const r = connect(a, b, live.current.connections);
     setConnections(r.connections);
-    setMsg(r.result.ok ? { ok: true, text: `Connected: ${portById(r.result.connection!.from)?.label} → ${portById(r.result.connection!.to)?.label}` } : { ok: false, text: r.result.reason ?? 'Not allowed.' });
+    setMsg(r.result.ok ? { ok: true, text: `შეერთდა: ${portById(r.result.connection!.from)?.label} → ${portById(r.result.connection!.to)?.label}` } : { ok: false, text: r.result.reason ?? 'დაუშვებელია.' });
   };
 
   const onPick = (id: string | null) => {
+    const c = live.current.cfg;
+    // functional buttons drawn on the 3D devices
+    if (id?.startsWith('tbtn:')) {
+      const [, z, act] = id.split(':') as [string, ZoneId, string];
+      const th = c.thermostats[z];
+      if (act === 'power') setThermostat(z, { enabled: !th.enabled });
+      if (act === 'minus') setThermostat(z, { setpointC: Math.max(5, th.setpointC - 0.5) });
+      if (act === 'plus') setThermostat(z, { setpointC: Math.min(30, th.setpointC + 0.5) });
+      const after = act === 'power' ? (th.enabled ? 'გამოირთო' : 'ჩაირთო') : `სასურველი ${(act === 'minus' ? Math.max(5, th.setpointC - 0.5) : Math.min(30, th.setpointC + 0.5)).toFixed(1)}°C`;
+      setToast(`${c.roomNames[z]}: ${after}`);
+      setSelected('thermostat:' + z);
+      return;
+    }
+    if (id === 'bbtn:minus' || id === 'bbtn:plus') {
+      const [lo, hi] = chLimits(c);
+      const v = Math.min(hi, Math.max(lo, c.sim.chSetpointC + (id === 'bbtn:plus' ? 1 : -1)));
+      setChSetpoint(v);
+      setToast(`ქვაბი: მიწოდების სასურველი t° ${v}°C (დიაპაზონი ${lo}–${hi}°C)`);
+      setSelected('boiler');
+      return;
+    }
     if (id?.startsWith('port:') && live.current.connectMode) {
       const p = id.slice(5);
       const pend = live.current.pending;
       if (!pend) {
         setPending(p);
-        setMsg({ ok: true, text: `Selected ${portById(p)?.label}. Now click the port to connect it to.` });
+        setMsg({ ok: true, text: `არჩეულია: ${portById(p)?.label}. ახლა დააწკაპუნეთ მეორე პორტზე.` });
       } else {
         setPending(null);
         if (pend !== p) tryConnect(pend, p);
       }
       return;
     }
-    if (id?.startsWith('ctx:') && live.current.connectMode) setMsg({ ok: false, text: 'Context only — not connectable here. Professional installation required.' });
+    // tapping a thermostat from far away zooms in so its buttons are easy to press
+    if (id?.startsWith('thermostat:') && (apiRef.current?.cameraDistanceTo(-1.03, 1.45, 0) ?? 0) > 0.8) apiRef.current?.focusThermostat(id.slice(11) as ZoneId);
+    if (id?.startsWith('ctx:') && live.current.connectMode) setMsg({ ok: false, text: 'მხოლოდ კონტექსტია — აქ არ ერთდება. საჭიროა პროფესიონალური მონტაჟი.' });
     setSelected(id);
   };
   const onPickRef = useRef(onPick);
   onPickRef.current = onPick;
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(''), 2200);
+    return () => clearTimeout(t);
+  }, [toast]);
 
   // create / dispose the scene
   useEffect(() => {
@@ -85,8 +125,10 @@ export function Balcony3DPage({ cfg, state, paused, setThermostat, connections, 
     import('./scene')
       .then((mod) => {
         if (cancelled || !hostRef.current) return;
-        api = mod.createBalconyScene(hostRef.current, (id) => onPickRef.current(id));
+        api = mod.createBalconyScene(hostRef.current, (id) => onPickRef.current(id), live.current.cfg.roomNames);
         apiRef.current = api;
+        // automation hook (used by e2e/balcony3d.mjs to click the 3D buttons)
+        (window as unknown as { __balcony3d?: unknown }).__balcony3d = { buttonScreenPos: (bid: string) => apiRef.current?.buttonScreenPos(bid) ?? null };
         setStatus('ready');
       })
       .catch((e: unknown) => {
@@ -127,10 +169,11 @@ export function Balcony3DPage({ cfg, state, paused, setThermostat, connections, 
     chFlow: b.pumpOn && b.diverter === 'CH' && Object.values(state.loops).some((l) => l.flowing),
     zoneOut: state.controller.zoneOut,
     thermostats: Object.fromEntries(
-      ZONES.map((z) => [z, { label: ZONE_LABEL[z], air: state.rooms[z].airC, sp: cfg.thermostats[z].setpointC, enabled: cfg.thermostats[z].enabled, calling: state.rooms[z].calling }]),
+      ZONES.map((z) => [z, { label: cfg.roomNames[z], air: state.rooms[z].airC, sp: cfg.thermostats[z].setpointC, enabled: cfg.thermostats[z].enabled, calling: state.rooms[z].calling }]),
     ) as SceneSnapshot['thermostats'],
     paused,
     speed: cfg.sim.speed,
+    chSetpoint: cfg.sim.chSetpointC,
     connectMode,
     summary,
     connections,
@@ -154,37 +197,30 @@ export function Balcony3DPage({ cfg, state, paused, setThermostat, connections, 
   return (
     <div className="b3d" data-testid="balcony3d-page">
       <div className="b3d-head">
-        <h2>3D Balcony Installation</h2>
-        <p className="small">ქვაბი, კოლექტორი, აქტუატორები და მართვა 3D-ში · all values simulated / illustrative</p>
+        <h2>3D აივნის ინსტალაცია</h2>
+        <p className="small">ქვაბი, კოლექტორი, აქტუატორები, კონტროლერი და თერმოსტატები 3D-ში · ყველა მნიშვნელობა სიმულირებული / საილუსტრაციოა</p>
       </div>
       <div className="b3d-disclaimer" role="note">
-        Illustrative prototype. It does not replace boiler controls, safety devices, frost protection, minimum-flow requirements, pump-overrun requirements,
-        hydraulic design or professional commissioning. Dimensions are illustrative, not installation clearances, and nothing here states that a boiler is
-        approved for balcony installation. No installation instructions are given.
+        საილუსტრაციო პროტოტიპი. ის არ ცვლის ქვაბის მართვას, დამცავ მოწყობილობებს, ყინვისგან დაცვას, მინიმალური ნაკადის და ტუმბოს დაყოვნების მოთხოვნებს,
+        ჰიდრავლიკურ პროექტს ან პროფესიონალურ გაშვებას. ზომები საილუსტრაციოა და არ არის მონტაჟის მანძილები; არ არის ნათქვამი, რომ ქვაბის აივანზე დაყენება
+        დაშვებულია. მონტაჟის ინსტრუქცია აქ არ არის.
       </div>
 
       <div className="b3d-grid">
         <div className="b3d-stage">
           <div className="b3d-toolbar">
-            <span className="small">Camera:</span>
-            {(
-              [
-                ['full', 'Full balcony'],
-                ['boiler', 'Boiler'],
-                ['manifold', 'Manifold'],
-                ['controller', 'Controller'],
-              ] as [CameraPreset, string][]
-            ).map(([p, l]) => (
+            <span className="small">კამერა:</span>
+            {CAMS.map(([p, l]) => (
               <button key={p} onClick={() => cam(p)} data-testid={`cam-${p}`}>
                 {l}
               </button>
             ))}
             <button onClick={() => cam('full')} data-testid="cam-reset">
-              ⟲ Reset camera
+              ⟲ კამერის აღდგენა
             </button>
             <label className="check">
               <input type="checkbox" id="b3d-explain" checked={explain} onChange={(e) => setExplain(e.target.checked)} data-testid="explain-toggle" />
-              Explain system
+              სისტემის ახსნა
             </label>
             <label className="check">
               <input
@@ -198,59 +234,83 @@ export function Balcony3DPage({ cfg, state, paused, setThermostat, connections, 
                 }}
                 data-testid="connect-toggle"
               />
-              Connect components
+              კომპონენტების შეერთება
             </label>
           </div>
           <div className="b3d-canvas" ref={hostRef} data-status={status} data-testid="b3d-canvas-host">
-            {status === 'loading' && <div className="b3d-overlay">Loading 3D scene…</div>}
+            {status === 'loading' && <div className="b3d-overlay">3D სცენა იტვირთება…</div>}
             {status === 'nowebgl' && (
               <div className="b3d-overlay" data-testid="no-webgl">
-                WebGL is not available in this browser, so the 3D scene cannot be shown. The other pages still work.
+                ამ ბრაუზერში WebGL მიუწვდომელია, ამიტომ 3D სცენა ვერ ჩანს. დანარჩენი გვერდები მუშაობს.
               </div>
             )}
-            {status === 'error' && <div className="b3d-overlay">The 3D scene failed to load: {errMsg}</div>}
+            {status === 'error' && <div className="b3d-overlay">3D სცენა ვერ ჩაიტვირთა: {errMsg}</div>}
+            {toast && (
+              <div className="b3d-toast" data-testid="b3d-toast" role="status">
+                {toast}
+              </div>
+            )}
             {explain && status === 'ready' && (
               <div className="b3d-legend">
-                <span><i style={{ background: '#ff3b30' }} /> Supply (hot)</span>
-                <span><i style={{ background: '#2f80ff' }} /> Return (cooler)</span>
-                <span><i style={{ background: '#2f9e44' }} /> Control signal</span>
-                <span><i style={{ background: '#e8711c' }} /> Boiler demand</span>
+                <span><i style={{ background: '#ff3b30' }} /> მიწოდება (ცხელი)</span>
+                <span><i style={{ background: '#2f80ff' }} /> დაბრუნება (გაცივებული)</span>
+                <span><i style={{ background: '#2f9e44' }} /> მართვის სიგნალი</span>
+                <span><i style={{ background: '#e8711c' }} /> ქვაბის მოთხოვნა</span>
               </div>
             )}
           </div>
-          <p className="small t-dim">Drag to orbit · scroll / pinch to zoom · right-drag or two-finger drag to pan · click a component to inspect it.</p>
+          <p className="small t-dim">
+            თითით/მაუსით გადაათრიეთ — ბრუნვა · ორი თითი ან ბორბალი — მასშტაბი · მარჯვენა ღილაკი ან ორი თითით გადატანა — გადაადგილება · დააჭირეთ კომპონენტს — ინფორმაცია.
+            <b> სცენაში თერმოსტატების ⏻ / − / + და ქვაბის − / + ღილაკები მუშაობს.</b>
+          </p>
         </div>
 
         <aside className="b3d-side">
           <section className="panel" data-testid="b3d-thermostats">
-            <h3>Room thermostats (simulated)</h3>
+            <h3>ოთახის თერმოსტატები (სიმულაცია)</h3>
             {ZONE_VIEW_ORDER.map((z) => {
               const th = cfg.thermostats[z];
               const st = thermostatStatus(state, cfg, z);
               return (
                 <div key={z} className={'b3d-th' + (selected === 'thermostat:' + z ? ' sel' : '')}>
-                  <button className="link" onClick={() => setSelected('thermostat:' + z)} style={{ color: ROOM_COLOR[z] }}>
-                    <b>{ZONE_LABEL[z]}</b>
+                  <button className="link" onClick={() => setSelected('thermostat:' + z)} style={{ color: ROOM_COLOR[z] }} data-testid={`b3d-name-${z}`}>
+                    <b>{cfg.roomNames[z]}</b>
                   </button>
                   <span className="small">{fmt(state.rooms[z].airC)}°C</span>
                   <span className="b3d-sp">
-                    <button aria-label={`${ZONE_LABEL[z]} −0.5`} onClick={() => setThermostat(z, { setpointC: Math.max(5, th.setpointC - 0.5) })} data-testid={`b3d-minus-${z}`}>
+                    <button aria-label={`${cfg.roomNames[z]} −0.5°C`} onClick={() => setThermostat(z, { setpointC: Math.max(5, th.setpointC - 0.5) })} data-testid={`b3d-minus-${z}`}>
                       −
                     </button>
                     <b data-testid={`b3d-sp-${z}`}>{th.setpointC.toFixed(1)}</b>
-                    <button aria-label={`${ZONE_LABEL[z]} +0.5`} onClick={() => setThermostat(z, { setpointC: Math.min(30, th.setpointC + 0.5) })} data-testid={`b3d-plus-${z}`}>
+                    <button aria-label={`${cfg.roomNames[z]} +0.5°C`} onClick={() => setThermostat(z, { setpointC: Math.min(30, th.setpointC + 0.5) })} data-testid={`b3d-plus-${z}`}>
                       +
                     </button>
                   </span>
                   <button className={'power' + (th.enabled ? ' on' : '')} onClick={() => setThermostat(z, { enabled: !th.enabled })} data-testid={`b3d-power-${z}`} aria-pressed={th.enabled}>
-                    {th.enabled ? 'On' : 'Off'}
+                    {th.enabled ? 'ჩართ.' : 'გამორთ.'}
                   </button>
-                  <span className={`badge st-${st}`}>{st === 'calling' ? 'heat demand' : st === 'satisfied' ? 'satisfied' : st === 'off' ? 'off' : st === 'sensor_lost' ? 'sensor lost' : 'idle'}</span>
+                  <span className={`badge st-${st}`}>{STATUS_LABEL[st] ?? st}</span>
                 </div>
               );
             })}
+            <div className="b3d-boilerctl">
+              <span className="small">ქვაბის მიწოდების სასურველი t°:</span>
+              <span className="b3d-sp">
+                <button aria-label="ქვაბი −1°C" onClick={() => setChSetpoint(Math.max(chMin, cfg.sim.chSetpointC - 1))} data-testid="b3d-ch-minus">
+                  −
+                </button>
+                <b data-testid="b3d-ch">{cfg.sim.chSetpointC}°C</b>
+                <button aria-label="ქვაბი +1°C" onClick={() => setChSetpoint(Math.min(chMax, cfg.sim.chSetpointC + 1))} data-testid="b3d-ch-plus">
+                  +
+                </button>
+              </span>
+              <span className="small t-dim">
+                ({chMin}–{chMax}°C)
+              </span>
+            </div>
             <p className="small t-dim">
-              Boiler: <b data-testid="b3d-boiler-mode">{MODE_LABEL[b.mode]}</b> · burner {b.burnerOn ? 'on' : 'off'} · pump {b.pumpOn ? 'on' : 'off'} · demand {state.controller.ta1Closed ? 'requested' : 'none'} (simulated)
+              ქვაბი: <b data-testid="b3d-boiler-mode">{MODE_LABEL[b.mode]}</b> · სანთურა {b.burnerOn ? 'ანთია' : 'ჩამქრალია'} · ტუმბო {b.pumpOn ? 'მუშაობს' : 'გაჩერებულია'} · მოთხოვნა{' '}
+              {state.controller.ta1Closed ? 'არის' : 'არ არის'} (სიმულაცია)
             </p>
           </section>
 
@@ -258,22 +318,22 @@ export function Balcony3DPage({ cfg, state, paused, setThermostat, connections, 
 
           {connectMode && (
             <section className="panel b3d-connect" data-testid="connect-panel">
-              <h3>Connect components (conceptual)</h3>
+              <h3>კომპონენტების შეერთება (კონცეპტუალური)</h3>
               <p className="small">
-                Click two port markers in the scene, or choose them below. While this mode is on, missing links change the simulation on this page. Gas, flue,
-                pressure-relief and mains wiring cannot be connected: professional installation required.
+                დააჭირეთ სცენაში ორ პორტის მარკერს, ან აირჩიეთ ქვემოთ. სანამ ეს რეჟიმი ჩართულია, ამ გვერდზე გამოტოვებული კავშირები სიმულაციას ცვლის. გაზი, საკვამური,
+                დამცავი სარქველი და ქსელის კვება არ ერთდება — საჭიროა პროფესიონალური მონტაჟი.
               </p>
               <div className="b3d-row">
-                <select value={fromPort} onChange={(e) => setFromPort(e.target.value)} aria-label="From port" data-testid="from-port">
-                  <option value="">From port…</option>
+                <select value={fromPort} onChange={(e) => setFromPort(e.target.value)} aria-label="საიდან" data-testid="from-port">
+                  <option value="">საიდან…</option>
                   {PORTS.map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.label}
                     </option>
                   ))}
                 </select>
-                <select value={toPort} onChange={(e) => setToPort(e.target.value)} aria-label="To port" data-testid="to-port">
-                  <option value="">To port…</option>
+                <select value={toPort} onChange={(e) => setToPort(e.target.value)} aria-label="სად" data-testid="to-port">
+                  <option value="">სად…</option>
                   {PORTS.map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.label}
@@ -281,7 +341,7 @@ export function Balcony3DPage({ cfg, state, paused, setThermostat, connections, 
                   ))}
                 </select>
                 <button className="primary" disabled={!fromPort || !toPort} onClick={() => tryConnect(fromPort, toPort)} data-testid="connect-btn">
-                  Connect
+                  შეერთება
                 </button>
               </div>
               {msg && (
@@ -290,37 +350,50 @@ export function Balcony3DPage({ cfg, state, paused, setThermostat, connections, 
                 </p>
               )}
               <div className="b3d-row">
-                <button onClick={() => { setConnections(assembledExample()); setMsg({ ok: true, text: 'Assembled example loaded.' }); }} data-testid="load-example">
-                  Load assembled example
+                <button
+                  onClick={() => {
+                    setConnections(assembledExample());
+                    setMsg({ ok: true, text: 'აწყობილი მაგალითი ჩაიტვირთა.' });
+                  }}
+                  data-testid="load-example"
+                >
+                  აწყობილი მაგალითის ჩატვირთვა
                 </button>
-                <button onClick={() => { setConnections([]); setPending(null); setMsg({ ok: true, text: 'All conceptual connections removed.' }); }} data-testid="reset-connections">
-                  Reset connections
+                <button
+                  onClick={() => {
+                    setConnections([]);
+                    setPending(null);
+                    setMsg({ ok: true, text: 'ყველა კონცეპტუალური კავშირი წაიშალა.' });
+                  }}
+                  data-testid="reset-connections"
+                >
+                  კავშირების გასუფთავება
                 </button>
               </div>
               <ul className="b3d-status small" data-testid="connect-status">
                 <li className={summary.waterPath ? 'ok' : 'bad'}>
-                  Water path: supply {summary.supply ? '✓' : '✗'} · return {summary.ret ? '✓' : '✗'} {summary.waterPath ? '' : '→ no flow can be shown'}
+                  წყლის გზა: მიწოდება {summary.supply ? '✓' : '✗'} · დაბრუნება {summary.ret ? '✓' : '✗'} {summary.waterPath ? '' : '→ ნაკადი ვერ გამოჩნდება'}
                 </li>
                 {ZONES.map((z) => (
                   <li key={z} className={summary.signal[z] && summary.power[z] ? 'ok' : 'bad'}>
-                    {ZONE_LABEL[z]}: signal {summary.signal[z] ? '✓' : '✗'} · actuator power {summary.power[z] ? '✓' : '✗'}
+                    {ZONE_LABEL[z]}: სიგნალი {summary.signal[z] ? '✓' : '✗'} · აქტუატორების კვება {summary.power[z] ? '✓' : '✗'}
                   </li>
                 ))}
-                <li className={summary.demandLink ? 'ok' : 'bad'}>Boiler demand link {summary.demandLink ? '✓' : '✗ → boiler request blocked'}</li>
+                <li className={summary.demandLink ? 'ok' : 'bad'}>ქვაბის მოთხოვნის კავშირი {summary.demandLink ? '✓' : '✗ → ქვაბი არ ირთვება'}</li>
               </ul>
               {connections.length > 0 && (
                 <ul className="b3d-links small">
                   {connections.map((c) => (
                     <li key={c.from + c.to}>
                       {portById(c.from)?.label} → {portById(c.to)?.label}{' '}
-                      <button className="icon" aria-label="Remove link" onClick={() => setConnections(disconnect(connections, c.from, c.to))}>
+                      <button className="icon" aria-label="კავშირის წაშლა" onClick={() => setConnections(disconnect(connections, c.from, c.to))}>
                         ✕
                       </button>
                     </li>
                   ))}
                 </ul>
               )}
-              <p className="small t-dim">Context only (not connectable): gas · flue · pressure-relief discharge · mains power — professional installation required.</p>
+              <p className="small t-dim">მხოლოდ კონტექსტი (არ ერთდება): გაზი · საკვამური · დამცავი სარქვლის გამონადენი · ქსელის კვება — საჭიროა პროფესიონალური მონტაჟი.</p>
             </section>
           )}
         </aside>
@@ -337,42 +410,42 @@ function Inspector({ id, cfg, state, connectMode, summary, onClose }: { id: stri
   if (!id) {
     return (
       <section className="panel" data-testid="b3d-inspector">
-        <h3>Inspector</h3>
-        <p className="small t-dim">Click the boiler, manifold, an actuator, the controller or a thermostat.</p>
+        <h3>ინსპექტორი</h3>
+        <p className="small t-dim">დააჭირეთ ქვაბს, კოლექტორს, აქტუატორს, კონტროლერს ან თერმოსტატს.</p>
       </section>
     );
   }
   const flowingCount = Object.values(state.loops).filter((l) => l.flowing).length;
   const openCount = Object.values(state.loops).filter((l) => l.act.pos >= 0.98).length;
   if (id === 'boiler') {
-    name = 'Boiler — generic wall-hung combi (illustrative)';
-    func = 'Heats the heating water (supply out, return in) when the demand input is closed. Represents the planned Ariston Genus ONE 24; the exact variant is unverified, so the model is generic and unbranded.';
-    st = `${MODE_LABEL[b.mode]} · burner ${b.burnerOn ? 'ON' : 'off'} · pump ${b.pumpOn ? 'running' : 'stopped'} · flow ${fmt(b.flowC)}°C / return ${fmt(b.returnC)}°C · demand input ${state.controller.ta1Closed ? 'closed' : 'open'}${b.deadHead ? ' · no open flow path (burner blocked in simulation)' : ''}`;
+    name = 'ქვაბი — ზოგადი კედლის კომბი (საილუსტრაციო)';
+    func = 'აცხელებს გათბობის წყალს (მიწოდება გამოდის, დაბრუნება შედის), როცა მოთხოვნის შესასვლელი დაკეტილია. წარმოადგენს დაგეგმილ Ariston Genus ONE 24-ს; ზუსტი ვარიანტი დაუდასტურებელია, ამიტომ მოდელი ზოგადია, ბრენდის გარეშე. წინა პანელზე − / + ცვლის მიწოდების სასურველ t°-ს.';
+    st = `${MODE_LABEL[b.mode]} · სანთურა ${b.burnerOn ? 'ანთია' : 'ჩამქრალია'} · ტუმბო ${b.pumpOn ? 'მუშაობს' : 'გაჩერებულია'} · მიწოდება ${fmt(b.flowC)}°C / დაბრუნება ${fmt(b.returnC)}°C · სასურველი ${cfg.sim.chSetpointC}°C · მოთხოვნა ${state.controller.ta1Closed ? 'დაკეტილია' : 'ღიაა'}${b.deadHead ? ' · ნაკადის გზა არ არის (სიმულაციაში სანთურა დაბლოკილია)' : ''}`;
   } else if (id === 'manifold' || id === 'pipe:supply' || id === 'pipe:return') {
-    name = id === 'manifold' ? 'Supply & return manifold (14 loops)' : id === 'pipe:supply' ? 'Heating supply pipe (boiler → manifold)' : 'Heating return pipe (manifold → boiler)';
-    func = 'Distributes heating water to 14 floor loops (supply bar, with actuators) and collects it back (return bar, with flow meters).';
-    st = `${openCount}/14 actuators fully open · ${flowingCount} loops with flow · supply ${fmt(b.flowC)}°C / return ${fmt(b.returnC)}°C (simulated)${connectMode ? ` · water path ${summary.waterPath ? 'complete' : 'INCOMPLETE'}` : ''}`;
+    name = id === 'manifold' ? 'მიწოდების და დაბრუნების კოლექტორი (14 კონტური)' : id === 'pipe:supply' ? 'გათბობის მიწოდების მილი (ქვაბი → კოლექტორი)' : 'გათბობის დაბრუნების მილი (კოლექტორი → ქვაბი)';
+    func = 'ანაწილებს გათბობის წყალს 14 იატაკის კონტურზე (მიწოდების ბარი, აქტუატორებით) და აგროვებს უკან (დაბრუნების ბარი, ნაკადმზომებით).';
+    st = `${openCount}/14 აქტუატორი სრულად ღიაა · ${flowingCount} კონტურში ნაკადია · მიწოდება ${fmt(b.flowC)}°C / დაბრუნება ${fmt(b.returnC)}°C (სიმულაცია)${connectMode ? ` · წყლის გზა ${summary.waterPath ? 'სრულია' : 'არასრულია'}` : ''}`;
   } else if (id.startsWith('actuator:')) {
     const lid = id.slice(9);
     const lc = cfg.loops.find((l) => l.id === lid);
     const ls = state.loops[lid];
     const z = controlZoneOf(lc?.room ?? null, cfg.owners);
-    name = `Thermal actuator ${lid}`;
-    func = 'Normally-closed electrothermal actuator on the loop valve; opens when its zone output is energised (≈3–5 min, simulated).';
-    st = `room ${lc?.room ? cfg.roomNames[lc.room] : 'unassigned'} · zone ${z ? ZONE_LABEL[z] : '—'} · command ${ls?.act.cmd ? 'OPEN' : 'close'} · position ${Math.round((ls?.act.pos ?? 0) * 100)}% (${ls?.act.phase}) · ${ls?.flowing ? `flow ${fmt(ls.flowLpm)} L/min*` : 'no flow'}`;
+    name = `თბური აქტუატორი ${lid}`;
+    func = 'ჩვეულებრივ დახურული (NC) ელექტროთერმული აქტუატორი კონტურის სარქველზე; იღება, როცა მისი ზონის გამოსავალს ძაბვა მიეწოდება (≈3–5 წთ, სიმულაცია).';
+    st = `ოთახი ${lc?.room ? cfg.roomNames[lc.room] : 'მიუნიჭებელი'} · ზონა ${z ? cfg.roomNames[z] : '—'} · ბრძანება ${ls?.act.cmd ? 'გახსენი' : 'დახურე'} · გახსნა ${Math.round((ls?.act.pos ?? 0) * 100)}% · ${ls?.flowing ? `ნაკადი ${fmt(ls.flowLpm)} ლ/წთ*` : 'ნაკადი არ არის'}`;
   } else if (id === 'controller') {
-    name = 'Zone controller (wiring centre)';
-    func = 'Receives the thermostat signals, powers each zone’s actuator group and, after its delay, closes the boiler-demand contact.';
-    st = ZONES.map((z, i) => `Z${i + 1} ${ZONE_LABEL[z]}: ${state.controller.zoneOut[z] ? 'ON' : 'off'}`).join(' · ') + ` · boiler demand ${state.controller.ta1Closed ? 'ON' : 'off'} · delay ${cfg.sim.relayDelayS / 60} min`;
+    name = 'ზონის კონტროლერი (გაყვანილობის ცენტრი)';
+    func = 'იღებს თერმოსტატების სიგნალს, აძლევს ძაბვას თითოეული ზონის აქტუატორებს და დაყოვნების შემდეგ კეტავს ქვაბის მოთხოვნის კონტაქტს.';
+    st = ZONES.map((z, i) => `Z${i + 1} ${cfg.roomNames[z]}: ${state.controller.zoneOut[z] ? 'ჩართ.' : 'გამორთ.'}`).join(' · ') + ` · ქვაბის მოთხოვნა ${state.controller.ta1Closed ? 'ჩართ.' : 'გამორთ.'} · დაყოვნება ${cfg.sim.relayDelayS / 60} წთ`;
   } else if (id.startsWith('thermostat:')) {
     const z = id.slice(11) as ZoneId;
-    name = `Room thermostat — ${ZONE_LABEL[z]}`;
-    func = 'Measures room air temperature and calls for heat below its setpoint (hysteresis). Its zone’s actuators and loops are highlighted.';
-    st = `${fmt(state.rooms[z].airC)}°C → setpoint ${cfg.thermostats[z].setpointC.toFixed(1)}°C · ${cfg.thermostats[z].enabled ? 'on' : 'off'} · ${state.rooms[z].calling ? 'calling for heat' : 'not calling'} · controls ${loopsOfZone(cfg, z).join(', ')}${connectMode ? ` · signal link ${summary.signal[z] ? 'connected' : 'DISCONNECTED (no demand)'}` : ''}`;
+    name = `ოთახის თერმოსტატი — ${cfg.roomNames[z]}`;
+    func = 'ზომავს ოთახის ჰაერის t°-ს და სასურველზე დაბლა ითხოვს სითბოს (ჰისტერეზისით). მისი ზონის აქტუატორები და კონტურები მონიშნულია. სცენაში ⏻ / − / + ღილაკები მუშაობს.';
+    st = `${fmt(state.rooms[z].airC)}°C → სასურველი ${cfg.thermostats[z].setpointC.toFixed(1)}°C · ${cfg.thermostats[z].enabled ? 'ჩართულია' : 'გამორთულია'} · ${state.rooms[z].calling ? 'ითხოვს სითბოს' : 'არ ითხოვს'} · მართავს: ${loopsOfZone(cfg, z).join(', ')}${connectMode ? ` · სიგნალის კავშირი ${summary.signal[z] ? 'შეერთებულია' : 'გათიშულია (მოთხოვნა არ გადის)'}` : ''}`;
   } else if (id.startsWith('ctx:')) {
-    const names: Record<string, string> = { 'ctx:gas': 'Gas supply', 'ctx:flue': 'Flue', 'ctx:prv': 'Pressure-relief discharge', 'ctx:mains': 'Mains power / isolator' };
+    const names: Record<string, string> = { 'ctx:gas': 'გაზის მიწოდება', 'ctx:flue': 'საკვამური', 'ctx:prv': 'დამცავი სარქვლის გამონადენი', 'ctx:mains': 'ქსელის კვება / ჩამრთველი' };
     name = names[id] ?? id;
-    func = 'Context only. Not part of this simulation and not connectable. Professional installation required.';
+    func = 'მხოლოდ კონტექსტი. არ არის სიმულაციის ნაწილი და არ ერთდება. საჭიროა პროფესიონალური მონტაჟი.';
     st = '—';
   } else {
     name = id;
@@ -380,8 +453,8 @@ function Inspector({ id, cfg, state, connectMode, summary, onClose }: { id: stri
   return (
     <section className="panel" data-testid="b3d-inspector">
       <h3>
-        Inspector
-        <button className="icon" onClick={onClose} aria-label="Close inspector">
+        ინსპექტორი
+        <button className="icon" onClick={onClose} aria-label="ინსპექტორის დახურვა">
           ✕
         </button>
       </h3>
@@ -390,7 +463,7 @@ function Inspector({ id, cfg, state, connectMode, summary, onClose }: { id: stri
       </p>
       <p className="small">{func}</p>
       <p className="small" data-testid="b3d-insp-state">
-        <b>Simulated state:</b> {st}
+        <b>სიმულირებული მდგომარეობა:</b> {st}
       </p>
     </section>
   );

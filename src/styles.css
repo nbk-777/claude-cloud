@@ -292,3 +292,5 @@ code { word-break: break-all; }
 .b3d-status li.ok { background: #ebfbee; }
 .b3d-status li.bad { background: #fff0f0; color: #a51111; }
 .b3d-links { padding-left: 16px; margin: 4px 0; }
+.b3d-toast { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); background: #1f1f1d; color: #fff; padding: 6px 12px; border-radius: 16px; font-size: 13px; pointer-events: none; max-width: 90%; text-align: center; }
+.b3d-boilerctl { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); }

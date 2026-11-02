@@ -45,19 +45,25 @@ export interface SceneSnapshot {
   thermostats: Record<ZoneId, ThermoView>;
   paused: boolean;
   speed: number;
+  chSetpoint: number;
   connectMode: boolean;
   summary: ConnectionSummary;
   connections: Connection[];
   pendingPort: string | null;
 }
 
-export type CameraPreset = 'full' | 'boiler' | 'manifold' | 'controller';
+export type CameraPreset = 'full' | 'boiler' | 'manifold' | 'controller' | 'thermostats';
 
 export interface SceneApi {
   update(s: SceneSnapshot): void;
   setSelection(id: string | null, loopIds: string[]): void;
   setCamera(p: CameraPreset): void;
   setExplain(on: boolean): void;
+  /** CSS-pixel position (relative to the canvas) of a clickable 3D button, for tests/automation. */
+  buttonScreenPos(id: string): { x: number; y: number } | null;
+  cameraDistanceTo(x: number, y: number, z: number): number;
+  /** Zoom to one thermostat so its buttons are large enough to tap. */
+  focusThermostat(z: ZoneId): void;
   dispose(): void;
 }
 
@@ -103,6 +109,7 @@ const CAMERAS: Record<CameraPreset, { pos: [number, number, number]; target: [nu
   boiler: { pos: [0.55, 1.8, 1.15], target: [0, 1.6, 0.15] },
   manifold: { pos: [0.35, 0.95, 1.0], target: [0, 0.66, 0.1] },
   controller: { pos: [1.25, 1.05, 0.85], target: [0.8, 0.85, 0.03] },
+  thermostats: { pos: [-1.03, 1.47, 0.62], target: [-1.03, 1.43, 0] },
 };
 
 // ── helpers ─────────────────────────────────────────────────────────────────
@@ -140,7 +147,7 @@ function textCanvas(lines: { text: string; size: number; color: string; weight?:
   }
   let y = pad;
   for (const l of lines) {
-    g.font = `${l.weight ?? 600} ${l.size}px system-ui, sans-serif`;
+    g.font = `${l.weight ?? 600} ${l.size}px 'Noto Sans Georgian', 'BPG Arial', system-ui, sans-serif`;
     g.fillStyle = l.color;
     g.textBaseline = 'top';
     g.fillText(l.text, pad, y);
@@ -151,7 +158,7 @@ function textCanvas(lines: { text: string; size: number; color: string; weight?:
 
 // ── scene ───────────────────────────────────────────────────────────────────
 
-export function createBalconyScene(container: HTMLElement, onPick: (id: string | null) => void): SceneApi {
+export function createBalconyScene(container: HTMLElement, onPick: (id: string | null) => void, names: Record<ZoneId, string>): SceneApi {
   const disposables: { dispose(): void }[] = [];
   const track = <T extends { dispose(): void }>(o: T): T => {
     disposables.push(o);
@@ -281,10 +288,10 @@ export function createBalconyScene(container: HTMLElement, onPick: (id: string |
     const lines = [{ text, size: 30, color: opts.color ?? '#1f2328', weight: 700 }];
     if (opts.sub) lines.push({ text: opts.sub, size: 22, color: '#a33a00', weight: 600 });
     const ctx = document.createElement('canvas').getContext('2d')!;
-    ctx.font = '700 30px system-ui, sans-serif';
+    ctx.font = "700 30px 'Noto Sans Georgian', 'BPG Arial', system-ui, sans-serif";
     let w = ctx.measureText(text).width;
     if (opts.sub) {
-      ctx.font = '600 22px system-ui, sans-serif';
+      ctx.font = "600 22px 'Noto Sans Georgian', 'BPG Arial', system-ui, sans-serif";
       w = Math.max(w, ctx.measureText(opts.sub).width);
     }
     const cw = Math.ceil(w + 24);
@@ -351,6 +358,12 @@ export function createBalconyScene(container: HTMLElement, onPick: (id: string |
   boilerGroup.add(lcd);
   // knob + status LED
   boilerGroup.add(mesh(G.cyl, M.chrome, [0.08, 1.42, front + 0.006], [0.022, 0.012, 0.022], [Math.PI / 2, 0, 0]));
+  const knobMark = mesh(G.box, M.red, [0, 0, 0], [0.004, 0.016, 0.003]);
+  const knobPivot = new THREE.Group();
+  knobPivot.position.set(0.08, 1.42, front + 0.013);
+  knobMark.position.set(0, 0.008, 0);
+  knobPivot.add(knobMark);
+  boilerGroup.add(knobPivot);
   const ledMat = track(new THREE.MeshStandardMaterial({ color: '#555', emissive: '#000' }));
   boilerGroup.add(mesh(G.sphere, ledMat, [0.15, 1.45, front + 0.004], [0.007, 0.007, 0.007]));
   // pump indicator (impeller)
@@ -366,7 +379,7 @@ export function createBalconyScene(container: HTMLElement, onPick: (id: string |
   boilerGroup.add(mesh(G.box, M.dark, [0.13, 1.335, front], [0.07, 0.025, 0.004]));
   setPick(boilerGroup, 'boiler');
   scene.add(boilerGroup);
-  makeLabel('Boiler (generic, illustrative)', [0, 2.07, 0.35], { size: 0.05 });
+  makeLabel('ქვაბი (ზოგადი, საილუსტრაციო)', [0, 2.07, 0.35], { size: 0.05 });
 
   // ── context-only infrastructure ──
   const ctx = new THREE.Group();
@@ -385,10 +398,10 @@ export function createBalconyScene(container: HTMLElement, onPick: (id: string |
   const mainsCable = new THREE.Mesh(track(new THREE.TubeGeometry(roundedPath([v3(0.42, 1.8, 0.03), v3(0.42, 1.72, 0.03), v3(0.2, 1.72, 0.03)], 0.03), 20, 0.004, 6)), M.cable);
   ctx.add(setPick(mainsCable, 'ctx:mains'));
   scene.add(ctx);
-  makeLabel('Gas — context only', [-0.32, 1.17, 0.3], { size: 0.032, sub: 'Professional installation required' });
-  makeLabel('Flue — context only', [0.2, 2.42, 0.2], { size: 0.032, sub: 'Professional installation required' });
-  makeLabel('Pressure-relief discharge', [0.66, 1.2, 0.12], { size: 0.03, sub: 'Professional installation required' });
-  makeLabel('Mains power', [0.6, 1.97, 0.06], { size: 0.03, sub: 'Professional installation required' });
+  makeLabel('გაზი — მხოლოდ კონტექსტი', [-0.32, 1.17, 0.3], { size: 0.032, sub: 'საჭიროა პროფესიონალური მონტაჟი' });
+  makeLabel('საკვამური — მხოლოდ კონტექსტი', [0.2, 2.42, 0.2], { size: 0.032, sub: 'საჭიროა პროფესიონალური მონტაჟი' });
+  makeLabel('დამცავი სარქვლის გამონადენი', [0.66, 1.2, 0.12], { size: 0.03, sub: 'საჭიროა პროფესიონალური მონტაჟი' });
+  makeLabel('ქსელის კვება 230V', [0.6, 1.97, 0.06], { size: 0.03, sub: 'საჭიროა პროფესიონალური მონტაჟი' });
 
   // ── boiler ↔ manifold pipes ──
   const supplyPts = [v3(-0.12, 1.27, SUP_Z), v3(-0.12, 1.02, SUP_Z), v3(-0.5, 1.02, SUP_Z), v3(-0.5, SUP_Y, SUP_Z), v3(-0.42, SUP_Y, SUP_Z)];
@@ -432,8 +445,8 @@ export function createBalconyScene(container: HTMLElement, onPick: (id: string |
   scene.add(manifold);
   // floor-loop trunking (pipes continue through the wall to the rooms — route illustrative)
   scene.add(setPick(mesh(G.box, M.duct, [0, DUCT_TOP / 2, 0.1], [0.82, DUCT_TOP, 0.18]), 'manifold'));
-  makeLabel('14 floor-loop pairs → rooms (route illustrative)', [0, 0.2, 0.32], { size: 0.03 });
-  makeLabel('Manifold (supply above, return below)', [-0.62, 0.9, 0.2], { size: 0.035 });
+  makeLabel('14 კონტურის წყვილი → ოთახებში (მარშრუტი საილუსტრაციო)', [0, 0.2, 0.32], { size: 0.03 });
+  makeLabel('კოლექტორი (ზემოთ მიწოდება, ქვემოთ დაბრუნება)', [-0.62, 0.9, 0.2], { size: 0.035 });
 
   // instanced per-port parts
   const N = 14;
@@ -521,7 +534,7 @@ export function createBalconyScene(container: HTMLElement, onPick: (id: string |
   ctrl.add(mesh(G.sphere, demandLed, [CTRL.x + 0.15, CTRL.y, CTRL.z + CTRL.d / 2 + 0.004], [0.01, 0.01, 0.01]));
   setPick(ctrl, 'controller');
   scene.add(ctrl);
-  makeLabel('Zone controller', [CTRL.x, CTRL.y + 0.16, 0.08], { size: 0.04 });
+  makeLabel('ზონის კონტროლერი', [CTRL.x, CTRL.y + 0.16, 0.08], { size: 0.04 });
   // cables: controller → actuator bundle, controller → boiler demand
   const cableToAct = new THREE.Mesh(track(new THREE.TubeGeometry(roundedPath([v3(CTRL.x - 0.15, CTRL.y - 0.08, 0.03), v3(0.55, CTRL.y - 0.08, 0.03), v3(0.55, 0.93, 0.03), v3(0.1, 0.93, SUP_Z - 0.02)], 0.04), 40, 0.004, 6)), M.cable);
   const cableDemand = new THREE.Mesh(track(new THREE.TubeGeometry(roundedPath([v3(CTRL.x + 0.15, CTRL.y + 0.11, 0.03), v3(CTRL.x + 0.15, 1.33, 0.03), v3(0.3, 1.33, 0.03), v3(0.3, 1.33, 0.25), v3(0.17, 1.33, 0.3)], 0.04), 40, 0.004, 6)), M.demandCable);
@@ -546,11 +559,68 @@ export function createBalconyScene(container: HTMLElement, onPick: (id: string |
     thermoGroups[z] = g;
     scene.add(g);
   });
-  scene.add(mesh(G.box, M.wallSide, [-1.03, THERMO_Y, 0.002], [0.9, 0.24, 0.004]));
-  makeLabel('Room thermostats — shown together for illustration', [-1.03, THERMO_Y + 0.17, 0.05], { size: 0.032 });
+  scene.add(mesh(G.box, M.wallSide, [-1.03, THERMO_Y, 0.002], [0.9, 0.28, 0.004]));
+
+  // ── functional 3D buttons (clicking them calls the same controls as the side panel) ──
+  const symbolTex = (sym: string, fg: string, bg: string) => {
+    const c = document.createElement('canvas');
+    c.width = c.height = 64;
+    const g = c.getContext('2d')!;
+    g.fillStyle = bg;
+    g.beginPath();
+    g.arc(32, 32, 31, 0, Math.PI * 2);
+    g.fill();
+    g.fillStyle = fg;
+    g.font = "700 40px 'Noto Sans Georgian', system-ui, sans-serif";
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText(sym, 32, 35);
+    const t = track(new THREE.CanvasTexture(c));
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  };
+  const btnGeo = track(new THREE.CircleGeometry(1, 24));
+  const btnMats = {
+    minus: track(new THREE.MeshBasicMaterial({ map: symbolTex('−', '#212529', '#f1f3f5') })),
+    plus: track(new THREE.MeshBasicMaterial({ map: symbolTex('+', '#212529', '#f1f3f5') })),
+  };
+  const hitMat = track(new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  const powerMats: Record<string, THREE.MeshBasicMaterial> = {};
+  const buttons: Record<string, THREE.Mesh> = {};
+  const addButton = (id: string, mat: THREE.Material, pos: [number, number, number], r: number) => {
+    const ring = mesh(G.cylLow, M.grey, [pos[0], pos[1], pos[2] - 0.002], [r * 1.15, 0.004, r * 1.15], [Math.PI / 2, 0, 0]);
+    scene.add(ring);
+    const b = new THREE.Mesh(btnGeo, mat);
+    b.position.set(...pos);
+    b.scale.setScalar(r);
+    b.userData.pick = id;
+    b.userData.baseZ = pos[2];
+    scene.add(b);
+    buttons[id] = b;
+    // larger invisible tap area (easier on phones)
+    const hit = new THREE.Mesh(btnGeo, hitMat);
+    hit.position.set(pos[0], pos[1], pos[2] + 0.001);
+    hit.scale.setScalar(r * 1.6);
+    hit.userData.pick = id;
+    scene.add(hit);
+    pickables.push(hit);
+  };
+  ZONE_ORDER.forEach((z) => {
+    const y = THERMO_Y - 0.038;
+    powerMats[z] = track(new THREE.MeshBasicMaterial({ map: symbolTex('⏻', '#ffffff', '#2b8a3e') }));
+    addButton(`tbtn:${z}:power`, powerMats[z], [THERMO_X[z] - 0.028, y, 0.0245], 0.0085);
+    addButton(`tbtn:${z}:minus`, btnMats.minus, [THERMO_X[z], y, 0.0245], 0.0085);
+    addButton(`tbtn:${z}:plus`, btnMats.plus, [THERMO_X[z] + 0.028, y, 0.0245], 0.0085);
+  });
+  const powerOffTex = symbolTex('⏻', '#ffffff', '#868e96');
+  const powerOnTex = powerMats[ZONE_ORDER[0]].map!;
+  addButton('bbtn:minus', btnMats.minus, [0.04, 1.395, BOILER.z + BOILER.d / 2 + 0.004], 0.011);
+  addButton('bbtn:plus', btnMats.plus, [0.12, 1.42, BOILER.z + BOILER.d / 2 + 0.004], 0.011);
+  makeLabel('მიწოდების t° − / +', [0.08, 1.33, 0.36], { size: 0.022 });
+  const pressAt: Record<string, number> = {};
+  makeLabel('ოთახის თერმოსტატები — საილუსტრაციოდ ერთად', [-1.03, THERMO_Y + 0.17, 0.05], { size: 0.032 });
   const thermoNameLabels: Record<string, THREE.Sprite> = {};
-  const NAMES: Record<ZoneId, string> = { living: 'Living Room', bath: 'Bathroom', child: "Child's Bedroom", main: 'Main Bedroom' };
-  ZONE_ORDER.forEach((z) => (thermoNameLabels[z] = makeLabel(NAMES[z], [THERMO_X[z], THERMO_Y - 0.085, 0.04], { size: 0.024 })));
+  ZONE_ORDER.forEach((z, i) => (thermoNameLabels[z] = makeLabel(names[z], [THERMO_X[z], THERMO_Y - (i % 2 ? 0.122 : 0.094), 0.04], { size: 0.02 })));
 
   // ── explain overlay ──
   const explain = new THREE.Group();
@@ -575,10 +645,10 @@ export function createBalconyScene(container: HTMLElement, onPick: (id: string |
   dashed([v3(CTRL.x + 0.15, CTRL.y, 0.07), v3(0.17, 1.34, 0.31)], '#e8711c');
   scene.add(explain);
   const explainLabels = [
-    makeLabel('① Supply (hot) — boiler → manifold → loops', [-0.75, 1.05, 0.25], { size: 0.032, color: '#c92a2a' }),
-    makeLabel('② Return (cooler) — loops → manifold → boiler', [0.78, 0.5, 0.25], { size: 0.032, color: '#1864ab' }),
-    makeLabel('③ Control signal — thermostat → controller → actuators', [-0.2, 1.2, 0.1], { size: 0.032, color: '#2b8a3e' }),
-    makeLabel('④ Boiler demand — controller → boiler', [0.6, 1.4, 0.3], { size: 0.032, color: '#d9480f' }),
+    makeLabel('① მიწოდება (ცხელი): ქვაბი → კოლექტორი → კონტურები', [-0.75, 1.05, 0.25], { size: 0.032, color: '#c92a2a' }),
+    makeLabel('② დაბრუნება (გაცივებული): კონტურები → კოლექტორი → ქვაბი', [0.78, 0.5, 0.25], { size: 0.032, color: '#1864ab' }),
+    makeLabel('③ მართვის სიგნალი: თერმოსტატი → კონტროლერი → აქტუატორები', [-0.2, 1.2, 0.1], { size: 0.032, color: '#2b8a3e' }),
+    makeLabel('④ ქვაბის მოთხოვნა: კონტროლერი → ქვაბი', [0.6, 1.4, 0.3], { size: 0.032, color: '#d9480f' }),
   ];
   explainLabels.forEach((l) => (l.visible = false));
 
@@ -634,7 +704,8 @@ export function createBalconyScene(container: HTMLElement, onPick: (id: string |
   const colB = new THREE.Color();
 
   function drawLcd(s: SceneSnapshot) {
-    const key = `${Math.round(s.flowC)}|${s.mode}|${s.burnerOn}|${s.pumpOn}|${s.ta1}`;
+    knobPivot.rotation.z = -((s.chSetpoint - 20) / 62) * Math.PI * 1.5 + Math.PI * 0.75;
+    const key = `${Math.round(s.flowC)}|${s.mode}|${s.burnerOn}|${s.pumpOn}|${s.ta1}|${s.chSetpoint}`;
     if (key === lastLcdKey) return;
     lastLcdKey = key;
     const g = lcdCanvas.getContext('2d')!;
@@ -643,10 +714,11 @@ export function createBalconyScene(container: HTMLElement, onPick: (id: string |
     g.fillStyle = '#bfe3ff';
     g.font = '700 54px monospace';
     g.fillText(`${Math.round(s.flowC)}°`, 14, 62);
-    g.font = '600 22px system-ui, sans-serif';
+    g.font = "600 22px 'Noto Sans Georgian', 'BPG Arial', system-ui, sans-serif";
     g.fillText(s.modeLabel, 14, 100);
-    g.fillText(s.pumpOn ? 'PUMP ⟳' : 'PUMP –', 150, 40);
-    g.fillText(s.ta1 ? 'DEMAND ●' : 'DEMAND ○', 140, 72);
+    g.fillText(`სასურ. ${s.chSetpoint}°`, 140, 104);
+    g.fillText(s.pumpOn ? 'ტუმბო ⟳' : 'ტუმბო –', 140, 40);
+    g.fillText(s.ta1 ? 'მოთხ. ●' : 'მოთხ. ○', 140, 72);
     g.fillStyle = s.burnerOn ? '#ff922b' : '#24406b';
     g.beginPath();
     g.arc(226, 104, 12, 0, Math.PI * 2);
@@ -662,6 +734,7 @@ export function createBalconyScene(container: HTMLElement, onPick: (id: string |
       const t = s.thermostats[z];
       const key = `${t.enabled}|${t.calling}|${t.air.toFixed(1)}|${t.sp}`;
       const l = thermoLcd[z];
+      powerMats[z].map = t.enabled ? powerOnTex : powerOffTex;
       if (l.key === key) return;
       l.key = key;
       const g = l.canvas.getContext('2d')!;
@@ -672,7 +745,8 @@ export function createBalconyScene(container: HTMLElement, onPick: (id: string |
         g.font = '700 40px monospace';
         g.fillText(t.air.toFixed(1), 10, 62);
         g.font = '600 18px monospace';
-        g.fillText(`SET ${t.sp.toFixed(1)}°`, 10, 100);
+        g.font = "600 17px 'Noto Sans Georgian', 'BPG Arial', system-ui, sans-serif";
+        g.fillText(`სასურ. ${t.sp.toFixed(1)}°`, 8, 100);
         g.fillStyle = t.calling ? '#ff922b' : '#24406b';
         g.beginPath();
         g.moveTo(110, 30);
@@ -755,7 +829,7 @@ export function createBalconyScene(container: HTMLElement, onPick: (id: string |
   let downAt: { x: number; y: number } | null = null;
   const onDown = (e: PointerEvent) => (downAt = { x: e.clientX, y: e.clientY });
   const onUp = (e: PointerEvent) => {
-    if (!downAt || Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) > 5) return;
+    if (!downAt || Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) > 8) return;
     const r = renderer.domElement.getBoundingClientRect();
     ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
     raycaster.setFromCamera(ndc, camera);
@@ -768,7 +842,9 @@ export function createBalconyScene(container: HTMLElement, onPick: (id: string |
         return;
       }
       if (o.userData.pick) {
-        onPick(o.userData.pick as string);
+        const pid = o.userData.pick as string;
+        if (buttons[pid]) pressAt[pid] = performance.now();
+        onPick(pid);
         return;
       }
     }
@@ -810,6 +886,12 @@ export function createBalconyScene(container: HTMLElement, onPick: (id: string |
       if (camAnim.t >= 1) camAnim = null;
     }
     controls.update();
+    for (const [id, t0] of Object.entries(pressAt)) {
+      const b = buttons[id];
+      const pressed = now - t0 < 160;
+      b.position.z = b.userData.baseZ - (pressed ? 0.0025 : 0);
+      if (!pressed) delete pressAt[id];
+    }
     if (s) {
       // flame flicker
       if (s.burnerOn) {
@@ -886,7 +968,28 @@ export function createBalconyScene(container: HTMLElement, onPick: (id: string |
     },
     setCamera(p) {
       const c = CAMERAS[p];
-      camAnim = { fromP: camera.position.clone(), toP: v3(...c.pos), fromT: controls.target.clone(), toT: v3(...c.target), t: 0 };
+      let toP = v3(...c.pos);
+      if (p === 'thermostats') {
+        // fit the 4-thermostat panel (≈0.95 m wide) to the current screen width (portrait phones)
+        const hHalf = Math.atan(Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * camera.aspect);
+        const d = Math.max(0.62, 0.5 / Math.tan(hHalf));
+        toP = v3(c.target[0], c.target[1] + 0.04, d);
+      }
+      camAnim = { fromP: camera.position.clone(), toP, fromT: controls.target.clone(), toT: v3(...c.target), t: 0 };
+    },
+    focusThermostat(z) {
+      const x = THERMO_X[z];
+      camAnim = { fromP: camera.position.clone(), toP: v3(x, THERMO_Y, 0.32), fromT: controls.target.clone(), toT: v3(x, THERMO_Y - 0.01, 0), t: 0 };
+    },
+    cameraDistanceTo(x, y, z) {
+      return camera.position.distanceTo(v3(x, y, z));
+    },
+    buttonScreenPos(id) {
+      const b = buttons[id];
+      if (!b) return null;
+      const p = b.getWorldPosition(new THREE.Vector3()).project(camera);
+      const r = renderer.domElement.getBoundingClientRect();
+      return { x: ((p.x + 1) / 2) * r.width, y: ((1 - p.y) / 2) * r.height };
     },
     setExplain(on) {
       explainOn = on;
